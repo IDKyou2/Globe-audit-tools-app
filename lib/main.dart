@@ -10,7 +10,7 @@ Future<void> main() async {
   await Supabase.initialize(
     url: 'https://bmgpiypezsejajmejxba.supabase.co',
     anonKey:
-        '<prefer publishable key instead of anon key for mobile and desktop apps>',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJtZ3BpeXBlenNlamFqbWVqeGJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1OTAxNjMsImV4cCI6MjA3NjE2NjE2M30.d1We_aPd2ziXNTzhlL33utEn1edUFsGH05LeVUVEhvk',
   );
 
   final router = GoRouter(
@@ -27,8 +27,9 @@ Future<void> main() async {
 }
 
 class MyApp extends StatelessWidget {
+  final supabase = Supabase.instance.client;
   final GoRouter router;
-  const MyApp({required this.router, super.key});
+  MyApp({required this.router, super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,67 +15,99 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  bool _loading = false;
 
-  void _login() {
-    if (_formKey.currentState!.validate()) {
-      String username = _usernameController.text.trim();
-      String password = _passwordController.text.trim();
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
 
-      // simple mock validation
-      if (username == '1' && password == '1') {
-        context.go('/dashboard'); //
-      } else if (username.isEmpty && password.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Invalid username or password')));
+    setState(() => _loading = true);
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
+    final supabase = Supabase.instance.client;
+
+    try {
+      // 🔍 Check user in your custom "users" table
+      final response = await supabase
+          .from('users')
+          .select()
+          .eq('username', username)
+          .eq('password', password)
+          .maybeSingle();
+
+      if (response == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid username or password')),
+        );
+      } else {
+        // ✅ Successful login
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Welcome, ${response['username']}!')),
+        );
+        context.go('/dashboard');
       }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      //appBar: AppBar(title: Text('Login Page')),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Login',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 20),
-              // Username
-              TextFormField(
-                controller: _usernameController,
-                decoration: InputDecoration(
-                  labelText: 'Username',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Enter username' : null,
-              ),
-              SizedBox(height: 16),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const Text(
+                    'Login',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
 
-              // Password
-              TextFormField(
-                controller: _passwordController,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Enter password' : null,
-              ),
-              SizedBox(height: 24),
+                  // Username
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Enter username'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
 
-              // Submit button
-              ElevatedButton(onPressed: _login, child: Text('Login')),
-            ],
+                  // Password
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(),
+                    ),
+                    obscureText: true,
+                    validator: (value) => value == null || value.isEmpty
+                        ? 'Enter password'
+                        : null,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Login button
+                  ElevatedButton(
+                    onPressed: _loading ? null : _login,
+                    child: _loading
+                        ? const CircularProgressIndicator(color: Colors.blue)
+                        : const Text('Login'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -26,6 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _handleLogout(BuildContext context) async {
     try {
       await Supabase.instance.client.auth.signOut();
+      // Redirect using GoRouter
       context.go('/');
     } catch (e) {
       ScaffoldMessenger.of(
@@ -38,25 +39,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        //title: const Text('Dashboard'),
         elevation: 2,
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'logout') {
-                _handleLogout(context);
+                _handleLogout(context); //
               }
             },
             itemBuilder: (BuildContext context) => [
-              const PopupMenuItem<String>(
-                value: 'manage_tools',
-                child: Row(
-                  children: [
-                    Icon(Icons.add, size: 20),
-                    SizedBox(width: 10),
-                    Text('Manage Tools'),
-                  ],
-                ),
-              ),
               const PopupMenuItem<String>(
                 value: 'logout',
                 child: Row(
@@ -85,69 +77,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // Dashboard Page
-class DashboardPage extends StatefulWidget {
+class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
-
-  @override
-  State<DashboardPage> createState() => _DashboardPageState();
-}
-
-class _DashboardPageState extends State<DashboardPage> {
-  int technicianCount = 0;
-  int okToolsCount = 0;
-  int missingToolsCount = 0;
-  int defectiveToolsCount = 0;
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchDashboardData();
-  }
-
-  Future<void> _fetchDashboardData() async {
-    final supabase = Supabase.instance.client;
-    setState(() => isLoading = true);
-
-    try {
-      // Debug: Fetch all technicians to see raw data
-      final allTechs = await supabase.from('technicians').select();
-      print('All technicians data: $allTechs');
-      print('Technicians count: ${allTechs.length}');
-
-      // Debug: Fetch all tools to see raw data
-      final allTools = await supabase.from('tools').select();
-      print('All tools data: $allTools');
-      print('Total tools: ${allTools.length}');
-
-      // Filter tools by status
-      final okList = allTools.where((tool) => tool['status'] == 'OK').toList();
-      final missingList = allTools
-          .where((tool) => tool['status'] == 'Missing')
-          .toList();
-      final defectiveList = allTools
-          .where((tool) => tool['status'] == 'Defective')
-          .toList();
-
-      print('OK tools: ${okList.length}');
-      print('Missing tools: ${missingList.length}');
-      print('Defective tools: ${defectiveList.length}');
-
-      if (!mounted) return;
-
-      setState(() {
-        technicianCount = allTechs.length;
-        okToolsCount = okList.length;
-        missingToolsCount = missingList.length;
-        defectiveToolsCount = defectiveList.length;
-        isLoading = false;
-      });
-    } catch (e) {
-      print('Error fetching dashboard data: $e');
-      print('Error type: ${e.runtimeType}');
-      if (mounted) setState(() => isLoading = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -165,41 +96,21 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      children: [
-                        DashboardBox(
-                          title: 'Technicians',
-                          count: technicianCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'OK Tools',
-                          count: okToolsCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'Missing Tools',
-                          count: missingToolsCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'Defective Tools',
-                          count: defectiveToolsCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'Total Tools',
-                          count:
-                              (okToolsCount +
-                                      missingToolsCount +
-                                      defectiveToolsCount)
-                                  .toString(),
-                        ),
-                      ],
-                    ),
+              child: GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                children: const [
+                  DashboardBox(title: 'Technicians', count: '12'),
+                  DashboardBox(title: 'Checked Today', count: '8'),
+                  DashboardBox(title: 'OK Tools', count: '245'),
+                  DashboardBox(title: 'Missing Tools', count: '5'),
+                  DashboardBox(title: 'Defective Tools', count: '3'),
+                  DashboardBox(title: 'Total Tools', count: '253'),
+                ],
+              ),
             ),
             const SizedBox(height: 40),
           ],
