@@ -4,6 +4,11 @@ import 'screens/LoginScreen.dart';
 import 'screens/DashboardScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'screens/TechnicianToolsPage.dart';
+import 'screens/TechniciansScreen.dart';
+import 'screens/ManageTechnicianToolsScreen.dart';
+import 'screens/AddNewToolPage.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -19,6 +24,25 @@ Future<void> main() async {
       GoRoute(
         path: '/dashboard',
         builder: (context, state) => DashboardScreen(),
+      ),
+      GoRoute(
+        path: '/techniciansPage',
+        builder: (context, state) => TechniciansScreen(),
+      ),
+      GoRoute(
+        path: '/view-tools',
+        builder: (context, state) {
+          final technician = state.extra as Map<String, dynamic>?;
+          return ManageTechnicianToolsScreen(technician: technician);
+        },
+      ),
+      GoRoute(
+        path: '/add-tools',
+        builder: (context, state) => const AddNewToolPage(),
+      ),
+      GoRoute(
+        path: '/technician-tools',
+        builder: (context, state) => const TechnicianToolsPage(),
       ),
     ],
   );

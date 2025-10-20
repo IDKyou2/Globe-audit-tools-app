@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'TechniciansPage.dart';
+import 'TechniciansScreen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -15,7 +15,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
 
-  late final List<Widget> _pages = [const DashboardPage(), TechniciansPage()];
+  late final List<Widget> _pages = [const DashboardPage(), TechniciansScreen()];
 
   void _onItemTapped(int index) {
     setState(() {
@@ -44,16 +44,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onSelected: (value) {
               if (value == 'logout') {
                 _handleLogout(context);
+              } else if (value == 'add-tools') {
+                context.go('/add-tools'); // navigate to AddNewToolPage
+              } else if (value == 'technician-tools') {
+                context.push('/technician-tools');
               }
             },
             itemBuilder: (BuildContext context) => [
               const PopupMenuItem<String>(
-                value: 'manage_tools',
+                value: 'add-tools',
                 child: Row(
                   children: [
                     Icon(Icons.add, size: 20),
                     SizedBox(width: 10),
-                    Text('Manage Tools'),
+                    Text('Add Tools'),
                   ],
                 ),
               ),
@@ -72,12 +76,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       body: _pages[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.people), label: 'Technicians'),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.engineering),
+            label: 'Technicians',
+          ),
         ],
       ),
     );
@@ -97,6 +107,7 @@ class _DashboardPageState extends State<DashboardPage> {
   int okToolsCount = 0;
   int missingToolsCount = 0;
   int defectiveToolsCount = 0;
+  int totalToolsCount = 0;
   bool isLoading = true;
 
   @override
@@ -116,16 +127,18 @@ class _DashboardPageState extends State<DashboardPage> {
       print('Technicians count: ${allTechs.length}');
 
       // Debug: Fetch all tools to see raw data
-      final allTools = await supabase.from('tools').select();
-      print('All tools data: $allTools');
-      print('Total tools: ${allTools.length}');
+      final totalTools = await supabase.from('tools').select();
+      print('All tools data: $totalTools');
+      print('Total tools: ${totalTools.length}');
 
       // Filter tools by status
-      final okList = allTools.where((tool) => tool['status'] == 'OK').toList();
-      final missingList = allTools
+      final okList = totalTools
+          .where((tool) => tool['status'] == 'OK')
+          .toList();
+      final missingList = totalTools
           .where((tool) => tool['status'] == 'Missing')
           .toList();
-      final defectiveList = allTools
+      final defectiveList = totalTools
           .where((tool) => tool['status'] == 'Defective')
           .toList();
 
@@ -140,6 +153,7 @@ class _DashboardPageState extends State<DashboardPage> {
         okToolsCount = okList.length;
         missingToolsCount = missingList.length;
         defectiveToolsCount = defectiveList.length;
+        totalToolsCount = totalTools.length;
         isLoading = false;
       });
     } catch (e) {
@@ -192,11 +206,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                         DashboardBox(
                           title: 'Total Tools',
-                          count:
-                              (okToolsCount +
-                                      missingToolsCount +
-                                      defectiveToolsCount)
-                                  .toString(),
+                          count: (totalToolsCount).toString(),
                         ),
                       ],
                     ),
