@@ -1,24 +1,27 @@
 // ignore_for_file: file_names
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class TechniciansPage extends StatefulWidget {
-  const TechniciansPage({super.key});
+class TechniciansScreen extends StatefulWidget {
+  const TechniciansScreen({super.key});
 
   @override
-  State<TechniciansPage> createState() => _TechniciansPageState();
+  State<TechniciansScreen> createState() => _TechniciansScreenState();
 }
 
-class _TechniciansPageState extends State<TechniciansPage> {
-  final TextEditingController _toolNameController = TextEditingController();
+class _TechniciansScreenState extends State<TechniciansScreen> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _clusterController = TextEditingController();
 
   List<dynamic> _technicians = [];
   bool _isLoading = true;
 
   @override
   void dispose() {
-    _toolNameController.dispose();
+    _nameController.dispose();
+    _clusterController.dispose();
     super.dispose();
   }
 
@@ -57,6 +60,7 @@ class _TechniciansPageState extends State<TechniciansPage> {
     }
   }
 
+  // Add
   void _handleAddPress() {
     final List<String> clusters = ['Davao North', 'Davao South'];
     String? selectedCluster;
@@ -73,7 +77,7 @@ class _TechniciansPageState extends State<TechniciansPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
-                      controller: _toolNameController,
+                      controller: _nameController,
                       decoration: const InputDecoration(
                         labelText: 'Full Name',
                         border: OutlineInputBorder(),
@@ -111,7 +115,7 @@ class _TechniciansPageState extends State<TechniciansPage> {
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    String name = _toolNameController.text.trim();
+                    String name = _nameController.text.trim();
                     String cluster = selectedCluster ?? '';
 
                     if (name.isEmpty || cluster.isEmpty) {
@@ -142,7 +146,7 @@ class _TechniciansPageState extends State<TechniciansPage> {
                             ),
                           ),
                         );
-                        _toolNameController.clear();
+                        _nameController.clear();
                       }
                     } catch (e) {
                       ScaffoldMessenger.of(
@@ -169,16 +173,12 @@ class _TechniciansPageState extends State<TechniciansPage> {
           Padding(
             padding: const EdgeInsets.all(20),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const Text(
-                  'List of Technicians',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                ),
                 ElevatedButton.icon(
                   onPressed: _handleAddPress,
                   icon: const Icon(Icons.add),
-                  label: const Text('Add'),
+                  label: const Text('Add technician'),
                 ),
               ],
             ),
@@ -218,13 +218,45 @@ class _TechniciansPageState extends State<TechniciansPage> {
                     margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
                       leading: CircleAvatar(
-                        child: Text('${(index + 1).toString()[0]}'),
+                        backgroundColor: Color.fromARGB(255, 0, 62, 112),
+                        child: Text(
+                          (index + 1).toString()[0],
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
-                      title: Text(technician['name'] ?? 'Unknown'),
+                      title: Row(
+                        children: [Text(technician['name'] ?? 'Unknown')],
+                      ),
                       subtitle: Text(
                         'Cluster: ${technician['cluster'] ?? 'N/A'}',
                       ),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+
+                      // 👇 Combine ElevatedButton + Icon inside trailing
+                      trailing: Row(
+                        mainAxisSize:
+                            MainAxisSize.min, // Important to prevent full width
+                        children: [
+                          ElevatedButton(
+                            onPressed: () {
+                              context.push(
+                                '/view-tools',
+                                extra: {
+                                  'id': technician['id'],
+                                  'name': technician['name'],
+                                },
+                              );
+                              print('Button pressed for ${technician['name']}');
+                            },
+                            child: const Text('View tools'),
+                          ),
+                          const SizedBox(width: 8), // spacing before arrow
+                          const Icon(Icons.arrow_forward_ios, size: 16),
+                        ],
+                      ),
                     ),
                   );
                 },
