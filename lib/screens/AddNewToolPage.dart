@@ -12,8 +12,7 @@ class AddNewToolPage extends StatefulWidget {
 
 class _AddNewToolPageState extends State<AddNewToolPage> {
   final _toolNameController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  String? _selectedStatus, _selectedToolType;
+  String? _selectedStatus, _selectedtoolCategory;
 
   bool _isLoading = false;
   List<dynamic> _technicians = [];
@@ -39,12 +38,12 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   Future<void> _addTool() async {
     final supabase = Supabase.instance.client;
 
-    final toolType = _selectedToolType;
+    final category = _selectedtoolCategory;
     final name = _toolNameController.text.trim();
-    final description = _descriptionController.text.trim();
+
     final status = _selectedStatus;
 
-    if (toolType == null || name.isEmpty) {
+    if (category == null || name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all required fields.')),
       );
@@ -54,9 +53,8 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
 
     try {
       await supabase.from('tools').insert({
-        'tool_type': toolType,
+        'category': category,
         'name': name,
-        'description': description,
         'status': status,
       });
 
@@ -66,9 +64,8 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         );
 
         _toolNameController.clear();
-        _descriptionController.clear();
         setState(() {
-          _selectedToolType = null;
+          _selectedtoolCategory = null;
           _selectedStatus = null;
         });
       }
@@ -84,7 +81,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   @override
   void dispose() {
     _toolNameController.dispose();
-    _descriptionController.dispose();
+
     super.dispose();
   }
 
@@ -99,7 +96,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
-                  value: _selectedToolType,
+                  value: _selectedtoolCategory,
                   decoration: const InputDecoration(
                     labelText: 'Tool Type *',
                     border: OutlineInputBorder(),
@@ -121,7 +118,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                     ),
                   ],
                   onChanged: (value) =>
-                      setState(() => _selectedToolType = value),
+                      setState(() => _selectedtoolCategory = value),
                 ),
 
                 const SizedBox(height: 16),
@@ -132,14 +129,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: _selectedStatus,

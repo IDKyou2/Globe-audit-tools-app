@@ -17,20 +17,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   late final List<Widget> _pages = [const DashboardPage(), TechniciansScreen()];
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   Future<void> _handleLogout(BuildContext context) async {
     try {
       await Supabase.instance.client.auth.signOut();
-      context.go('/');
+      if (mounted) context.go('/');
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error logging out: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error logging out: $e')));
+      }
     }
   }
 
@@ -38,16 +34,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: const Color.fromARGB(255, 0, 62, 112),
         elevation: 2,
+        title: Padding(
+          padding: const EdgeInsets.all(10.0),
+          child: Text(
+            _selectedIndex == 0 ? 'Dashboard' : 'List of Technicians',
+            style: const TextStyle(
+              //fontWeight: FontWeight.bold,
+              color: Colors.white,
+              fontSize: 20,
+            ),
+          ),
+        ),
+
         actions: [
           PopupMenuButton<String>(
+            icon: const Icon(
+              Icons.more_vert_outlined,
+              color: Color.fromARGB(255, 255, 255, 255),
+            ), // icon color
             onSelected: (value) {
               if (value == 'logout') {
                 _handleLogout(context);
               } else if (value == 'add-tools') {
-                context.go('/add-tools'); // navigate to AddNewToolPage
-              } else if (value == 'technician-tools') {
-                context.push('/technician-tools');
+                context.push('/add-tools');
               }
             },
             itemBuilder: (BuildContext context) => [
@@ -103,11 +114,14 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  int checkedTodayCount = 0;
+
   int technicianCount = 0;
-  int okToolsCount = 0;
-  int missingToolsCount = 0;
-  int defectiveToolsCount = 0;
   int totalToolsCount = 0;
+  int toolsOnHandCount = 0;
+  int toolsNotOnHandCount = 0;
+  int toolsUnassignedCount = 0;
+  int toolsCheckedToday = 0;
   bool isLoading = true;
 
   @override
@@ -121,98 +135,129 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() => isLoading = true);
 
     try {
-      // Debug: Fetch all technicians to see raw data
-      final allTechs = await supabase.from('technicians').select();
-      print('All technicians data: $allTechs');
-      print('Technicians count: ${allTechs.length}');
+      // --- Fetch all data from tables ---
+      final technicians = await supabase.from('technicians').select();
+      final allTools = await supabase.from('tools').select();
+      final technicianTools = await supabase
+          .from('technician_tools')
+          .select('is_onhand, created_at');
 
-      // Debug: Fetch all tools to see raw data
-      final totalTools = await supabase.from('tools').select();
-      print('All tools data: $totalTools');
-      print('Total tools: ${totalTools.length}');
+      // --- Initialize counts ---
+      int okTools = 0;
+      int missingTools = 0;
+      int checkedToday = 0;
 
-      // Filter tools by status
-      final okList = totalTools
-          .where((tool) => tool['status'] == 'OK')
-          .toList();
-      final missingList = totalTools
-          .where((tool) => tool['status'] == 'Missing')
-          .toList();
-      final defectiveList = totalTools
-          .where((tool) => tool['status'] == 'Defective')
-          .toList();
+      final today = DateTime.now();
 
-      print('OK tools: ${okList.length}');
-      print('Missing tools: ${missingList.length}');
-      print('Defective tools: ${defectiveList.length}');
+      for (final tool in technicianTools) {
+        final isOnhand = tool['is_onhand'] as String?;
+        final createdAt = tool['created_at'] != null
+            ? DateTime.parse(tool['created_at'])
+            : null;
+
+        // ✅ Count OK and Missing tools
+        if (isOnhand == 'Yes')
+          okTools++;
+        else if (isOnhand == 'No')
+          missingTools++;
+
+        // 📅 Count tools checked/added today
+        if (createdAt != null &&
+            createdAt.year == today.year &&
+            createdAt.month == today.month &&
+            createdAt.day == today.day) {
+          checkedToday++;
+        }
+      }
+
+      // 🧮 Total tools in system
+      final totalTools = allTools.length;
 
       if (!mounted) return;
 
       setState(() {
-        technicianCount = allTechs.length;
-        okToolsCount = okList.length;
-        missingToolsCount = missingList.length;
-        defectiveToolsCount = defectiveList.length;
-        totalToolsCount = totalTools.length;
+        technicianCount = technicians.length;
+        totalToolsCount = totalTools;
+        toolsOnHandCount = okTools;
+        toolsNotOnHandCount = missingTools;
+        toolsUnassignedCount = 0; // placeholder, since we removed defective
+        checkedTodayCount = checkedToday;
         isLoading = false;
       });
     } catch (e) {
-      print('Error fetching dashboard data: $e');
-      print('Error type: ${e.runtimeType}');
-      if (mounted) setState(() => isLoading = false);
+      debugPrint('❌ Error fetching dashboard data: $e');
+      if (mounted) {
+        setState(() => isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load dashboard: $e')));
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: Text(
-                'Dashboard',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+    return RefreshIndicator(
+      onRefresh: _fetchDashboardData,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: isLoading
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(40),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    : GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        children: [
+                          DashboardBox(
+                            title: 'Technicians',
+                            count: technicianCount.toString(),
+                            icon: Icons.engineering,
+                            color: Colors.blue,
+                          ),
+                          DashboardBox(
+                            title: 'Total Tools',
+                            count: totalToolsCount.toString(),
+                            icon: Icons.build,
+                            color: Colors.purple,
+                          ),
+                          DashboardBox(
+                            title: 'Tools On Hand',
+                            count: toolsOnHandCount.toString(),
+                            icon: Icons.check_circle,
+                            color: Colors.green,
+                          ),
+                          DashboardBox(
+                            title: 'Tools Not On Hand',
+                            count: toolsNotOnHandCount.toString(),
+                            icon: Icons.cancel,
+                            color: Colors.orange,
+                          ),
+                          DashboardBox(
+                            title: 'Unassigned Tools',
+                            count: toolsUnassignedCount.toString(),
+                            icon: Icons.inventory_2,
+                            color: Colors.grey,
+                          ),
+                        ],
+                      ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      children: [
-                        DashboardBox(
-                          title: 'Technicians',
-                          count: technicianCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'OK Tools',
-                          count: okToolsCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'Missing Tools',
-                          count: missingToolsCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'Defective Tools',
-                          count: defectiveToolsCount.toString(),
-                        ),
-                        DashboardBox(
-                          title: 'Total Tools',
-                          count: (totalToolsCount).toString(),
-                        ),
-                      ],
-                    ),
-            ),
-            const SizedBox(height: 40),
-          ],
+              const SizedBox(height: 40),
+            ],
+          ),
         ),
       ),
     );
@@ -223,18 +268,27 @@ class _DashboardPageState extends State<DashboardPage> {
 class DashboardBox extends StatelessWidget {
   final String title;
   final String count;
+  final IconData icon;
+  final Color color;
 
-  const DashboardBox({super.key, required this.title, required this.count});
+  const DashboardBox({
+    super.key,
+    required this.title,
+    required this.count,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
+            color: Colors.grey.withOpacity(0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -243,22 +297,27 @@ class DashboardBox extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            count,
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: Colors.blue,
-            ),
-          ),
+          Icon(icon, size: 32, color: color),
           const SizedBox(height: 8),
           Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey,
+            count,
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade700,
+              ),
             ),
           ),
         ],

@@ -173,16 +173,12 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
           Padding(
             padding: const EdgeInsets.all(20),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                const Text(
-                  'List of Technicians',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                ),
                 ElevatedButton.icon(
                   onPressed: _handleAddPress,
                   icon: const Icon(Icons.add),
-                  label: const Text('Add'),
+                  label: const Text('Add technician'),
                 ),
               ],
             ),
@@ -222,7 +218,15 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
                       leading: CircleAvatar(
-                        child: Text('${(index + 1).toString()[0]}'),
+                        backgroundColor: Color.fromARGB(255, 0, 62, 112),
+                        child: Text(
+                          (index + 1).toString()[0],
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                       title: Row(
                         children: [Text(technician['name'] ?? 'Unknown')],
