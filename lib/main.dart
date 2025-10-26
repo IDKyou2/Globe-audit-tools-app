@@ -61,6 +61,54 @@ class MyApp extends StatelessWidget {
       routerConfig: router,
       title: 'Tools Audit App',
       debugShowCheckedModeBanner: false,
+
+      // Light theme
+      theme: ThemeData(
+        brightness: Brightness.light,
+        primaryColor: const Color(0xFF003E70),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF003E70),
+          brightness: Brightness.light,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF003E70),
+          foregroundColor: Colors.white,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF003E70),
+          selectedItemColor: Colors.white,
+          unselectedItemColor: Colors.white70,
+        ),
+        progressIndicatorTheme: const ProgressIndicatorThemeData(
+          color: Color(0xFF003E70),
+        ),
+        useMaterial3: true,
+      ),
+
+      // 🌙 Dark theme
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF003E70),
+          brightness: Brightness.dark,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF001F3A),
+          foregroundColor: Colors.white,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF001F3A),
+          selectedItemColor: Colors.lightBlueAccent,
+          unselectedItemColor: Colors.white54,
+        ),
+        progressIndicatorTheme: const ProgressIndicatorThemeData(
+          color: Colors.lightBlueAccent,
+        ),
+        useMaterial3: true,
+      ),
+
+      // Auto-switch based on system settings
+      themeMode: ThemeMode.system,
     );
   }
 }

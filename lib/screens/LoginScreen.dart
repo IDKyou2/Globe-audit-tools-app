@@ -96,7 +96,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? 'Enter password'
                         : null,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'No account yet? Signup',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
 
                   // Login button
                   ElevatedButton(
