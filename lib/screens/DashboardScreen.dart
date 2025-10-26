@@ -66,7 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 value: 'add-tools',
                 child: Row(
                   children: [
-                    Icon(Icons.add, size: 20),
+                    Icon(Icons.add, size: 20, color: Color(0xFF001F3A)),
                     SizedBox(width: 10),
                     Text('Add Tools'),
                   ],
@@ -76,7 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout, size: 20),
+                    Icon(Icons.logout, size: 20, color: Colors.red),
                     SizedBox(width: 10),
                     Text('Logout'),
                   ],
@@ -88,6 +88,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: Colors.white,
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
         items: const [

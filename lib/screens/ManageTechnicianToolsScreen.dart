@@ -15,9 +15,12 @@ class ManageTechnicianToolsScreen extends StatefulWidget {
 
 class _ManageTechnicianToolsScreenState
     extends State<ManageTechnicianToolsScreen> {
+  final _supabase = Supabase.instance.client;
+
   List<Map<String, dynamic>> _tools = [];
   bool _loading = true;
-  Set<String> _updatingTools = <String>{}; // Track tools being updated
+  bool _saving = false;
+  bool _hasChanges = false;
 
   @override
   void initState() {
@@ -25,98 +28,209 @@ class _ManageTechnicianToolsScreenState
     _fetchTechnicianTools();
   }
 
-  /// ✅ Fetch all tools and mark which ones this technician has on hand
+  /// Fetch all tools and mark which ones this technician has on hand
   Future<void> _fetchTechnicianTools() async {
     setState(() => _loading = true);
-    final supabase = Supabase.instance.client;
 
     final technicianId = widget.technician?['id'];
     if (technicianId == null) {
-      print('❌ No technician ID provided');
+      debugPrint('❌ No technician ID provided');
       setState(() => _loading = false);
       return;
     }
 
     try {
-      // Get all tools
-      final allTools = await supabase.from('tools').select();
-
-      // Get this technician's assigned tools
-      final assignedTools = await supabase
+      final allTools = await _supabase
+          .from('tools')
+          .select('tools_id, name, category');
+      final assignedTools = await _supabase
           .from('technician_tools')
           .select('tools_id, is_onhand')
           .eq('technician_id', technicianId);
 
-      // Merge both lists
       final combined = allTools.map<Map<String, dynamic>>((tool) {
         final match = assignedTools.firstWhere(
           (a) => a['tools_id'] == tool['tools_id'],
           orElse: () => {'is_onhand': 'No'},
         );
+
         return {
           'tools_id': tool['tools_id'],
           'name': tool['name'],
+          'category': tool['category'],
           'is_onhand': match['is_onhand'] ?? 'No',
+          'original_is_onhand': match['is_onhand'] ?? 'No',
         };
       }).toList();
 
       setState(() {
         _tools = combined;
+        _hasChanges = false;
       });
     } catch (e) {
-      print('❌ Error fetching technician tools: $e');
+      debugPrint('❌ Error fetching technician tools: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to load tools'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       setState(() => _loading = false);
     }
   }
 
-  /// ✅ Update the tool's on-hand status (now fully async)
-  Future<void> _updateToolStatus(String toolId, String newStatus) async {
-    final supabase = Supabase.instance.client;
-    final technicianId = widget.technician?['id'] as String?;
+  /// Save all changes to the database
+  Future<void> _saveChanges() async {
+    final technicianId = widget.technician?['id'];
+    if (technicianId == null || _saving) return;
 
-    if (_updatingTools.contains(toolId)) return;
-
-    setState(() => _updatingTools.add(toolId));
+    setState(() => _saving = true);
 
     try {
-      await supabase.from('technician_tools').upsert({
-        'technician_id': technicianId,
-        'tools_id': toolId,
-        'is_onhand': newStatus,
-      });
+      final changedTools = _tools.where((tool) {
+        return tool['is_onhand'] != tool['original_is_onhand'];
+      }).toList();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Updated to $newStatus'),
-            duration: const Duration(milliseconds: 800),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Error updating tool status: $e');
-
-      if (mounted) {
-        setState(() {
-          final index = _tools.indexWhere((t) => t['id'] == toolId);
-          if (index != -1) {
-            _tools[index]['is_onhand'] = newStatus == 'Yes' ? 'No' : 'Yes';
-          }
-        });
-
+      if (changedTools.isEmpty) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to update tool'),
-            backgroundColor: Colors.red,
+            content: Text('No changes to save'),
+            duration: Duration(milliseconds: 800),
           ),
         );
+        setState(() => _saving = false);
+        return;
       }
+
+      final updates = changedTools
+          .map(
+            (tool) => {
+              'technician_id': technicianId,
+              'tools_id': tool['tools_id'],
+              'is_onhand': tool['is_onhand'],
+            },
+          )
+          .toList();
+
+      await _supabase.from('technician_tools').upsert(updates);
+
+      for (var tool in _tools) {
+        tool['original_is_onhand'] = tool['is_onhand'];
+      }
+
+      if (!mounted) return;
+      setState(() => _hasChanges = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved ${changedTools.length} changes'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ Error saving changes: $e');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to save changes'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
-        setState(() => _updatingTools.remove(toolId));
+        setState(() => _saving = false);
       }
     }
+  }
+
+  /// Check if there are unsaved changes
+  void _checkForChanges() {
+    final hasChanges = _tools.any((tool) {
+      return tool['is_onhand'] != tool['original_is_onhand'];
+    });
+
+    if (hasChanges != _hasChanges) {
+      setState(() => _hasChanges = hasChanges);
+    }
+  }
+
+  /// Build tools by category
+  Widget _buildCategoryTools(String category) {
+    final filteredTools = _tools
+        .where((tool) => tool['category'] == category)
+        .toList();
+
+    if (filteredTools.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Text(
+          'No $category tools found',
+          style: const TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          category,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.blueAccent,
+          ),
+        ),
+        const Divider(),
+        ...filteredTools.map((tool) {
+          return CheckboxListTile(
+            title: Text(tool['name'] ?? 'Unnamed tool'),
+            value: tool['is_onhand'] == 'Yes',
+            onChanged: _saving
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    final newStatus = value ? 'Yes' : 'No';
+
+                    setState(() {
+                      tool['is_onhand'] = newStatus;
+                    });
+
+                    _checkForChanges();
+                  },
+          );
+        }),
+      ],
+    );
+  }
+
+  /// Build the list of tools organized by category
+  Widget _buildToolsList() {
+    if (_tools.isEmpty) {
+      return const Center(child: Text('No tools found'));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Tools On-hand',
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        _buildCategoryTools('PPE'),
+        _buildCategoryTools('GPON Tools'),
+        _buildCategoryTools('Common Tools'),
+        _buildCategoryTools('Additional Tools'),
+        const SizedBox(height: 80), // Space for FAB
+      ],
+    );
   }
 
   @override
@@ -129,48 +243,21 @@ class _ManageTechnicianToolsScreenState
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _fetchTechnicianTools,
-              child: _tools.isEmpty
-                  ? const Center(child: Text('No tools found'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _tools.length,
-                      itemBuilder: (context, index) {
-                        final tool = _tools[index];
-                        final isUpdating = _updatingTools.contains(
-                          tool['tools_id'],
-                        );
-
-                        return CheckboxListTile(
-                          title: Text(tool['name'] ?? 'Unnamed tool'),
-                          subtitle: isUpdating
-                              ? const Text(
-                                  'Updating...',
-                                  style: TextStyle(fontSize: 12),
-                                )
-                              : null,
-                          value: tool['is_onhand'] == 'Yes',
-                          onChanged: isUpdating
-                              ? null
-                              : (bool? value) {
-                                  if (value == null) return;
-
-                                  final newStatus = value ? 'Yes' : 'No';
-
-                                  // Optimistic UI update
-                                  setState(() {
-                                    tool['is_onhand'] = newStatus;
-                                  });
-
-                                  // Fire-and-forget update (non-blocking)
-                                  _updateToolStatus(
-                                    tool['tools_id'],
-                                    newStatus,
-                                  );
-                                },
-                        );
-                      },
-                    ),
+              child: _buildToolsList(),
             ),
+      floatingActionButton: _hasChanges
+          ? FloatingActionButton.extended(
+              onPressed: _saving ? null : _saveChanges,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(_saving ? 'Saving...' : 'Save Changes'),
+            )
+          : null,
     );
   }
 }
