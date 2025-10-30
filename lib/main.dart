@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 import 'screens/LoginScreen.dart';
 import 'screens/DashboardScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'screens/TechnicianToolsPage.dart';
 import 'screens/TechniciansScreen.dart';
 import 'screens/ManageTechnicianToolsScreen.dart';

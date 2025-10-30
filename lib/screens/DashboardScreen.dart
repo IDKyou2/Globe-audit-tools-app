@@ -141,37 +141,38 @@ class _DashboardPageState extends State<DashboardPage> {
       final allTools = await supabase.from('tools').select();
       final technicianTools = await supabase
           .from('technician_tools')
-          .select('is_onhand, created_at');
+          .select(
+            'checked_at, status',
+          ); // ✅ use checked_at instead of created_at
 
       // --- Initialize counts ---
-      int okTools = 0;
-      int missingTools = 0;
+      int onHandCount = 0;
+      int notOnHandCount = 0;
       int checkedToday = 0;
 
       final today = DateTime.now();
 
       for (final tool in technicianTools) {
-        final isOnhand = tool['is_onhand'] as String?;
-        final createdAt = tool['created_at'] != null
-            ? DateTime.parse(tool['created_at'])
+        final checkedAt = tool['checked_at'] != null
+            ? DateTime.parse(tool['checked_at'])
             : null;
 
-        // ✅ Count OK and Missing tools
-        if (isOnhand == 'Yes')
-          okTools++;
-        else if (isOnhand == 'No')
-          missingTools++;
+        // ✅ Count based on status
+        if (tool['status'] == 'Onhand') {
+          onHandCount++;
+        } else if (tool['status'] == 'None') {
+          notOnHandCount++;
+        }
 
-        // 📅 Count tools checked/added today
-        if (createdAt != null &&
-            createdAt.year == today.year &&
-            createdAt.month == today.month &&
-            createdAt.day == today.day) {
+        // 📅 Count tools checked/updated today
+        if (checkedAt != null &&
+            checkedAt.year == today.year &&
+            checkedAt.month == today.month &&
+            checkedAt.day == today.day) {
           checkedToday++;
         }
       }
 
-      // 🧮 Total tools in system
       final totalTools = allTools.length;
 
       if (!mounted) return;
@@ -179,9 +180,9 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         technicianCount = technicians.length;
         totalToolsCount = totalTools;
-        toolsOnHandCount = okTools;
-        toolsNotOnHandCount = missingTools;
-        toolsUnassignedCount = 0; // placeholder, since we removed defective
+        toolsOnHandCount = onHandCount;
+        toolsNotOnHandCount = notOnHandCount;
+        toolsUnassignedCount = 0;
         checkedTodayCount = checkedToday;
         isLoading = false;
       });
@@ -236,23 +237,25 @@ class _DashboardPageState extends State<DashboardPage> {
                             color: Colors.purple,
                           ),
                           DashboardBox(
-                            title: 'Tools On Hand',
+                            title: 'OK Tools',
                             count: toolsOnHandCount.toString(),
                             icon: Icons.check_circle,
                             color: Colors.green,
                           ),
                           DashboardBox(
-                            title: 'Tools Not On Hand',
+                            title: 'Defective Tools',
                             count: toolsNotOnHandCount.toString(),
                             icon: Icons.cancel,
-                            color: Colors.orange,
+                            color: Colors.red,
                           ),
+                          /*
                           DashboardBox(
                             title: 'Unassigned Tools',
                             count: toolsUnassignedCount.toString(),
                             icon: Icons.inventory_2,
                             color: Colors.grey,
                           ),
+                          */
                         ],
                       ),
               ),
