@@ -3,8 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
-import 'package:mobile_scanner/mobile_scanner.dart';
+//import 'dart:io';
+//import 'package:mobile_scanner/mobile_scanner.dart';
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
@@ -28,15 +28,16 @@ class _ManageTechnicianToolsScreenState
   bool _saving = false;
   bool _hasChanges = false;
 
-  File? _capturedImage;
   final ImagePicker _picker = ImagePicker();
 
   // Track which categories are expanded
   final Map<String, bool> _expandedCategories = {
-    'PPE': true,
-    'GPON Tools': true,
-    'Common Tools': true,
-    'Additional Tools': true,
+    /*
+    'PPE': false,
+    'GPON Tools': false,
+    'Common Tools': false,
+    'Additional Tools': false,
+    */
   };
 
   @override
@@ -45,7 +46,6 @@ class _ManageTechnicianToolsScreenState
     _fetchTechnicianTools();
   }
 
-  /// Fetch all tools and mark which ones this technician has on hand
   Future<void> _fetchTechnicianTools() async {
     setState(() => _loading = true);
 
@@ -87,6 +87,13 @@ class _ManageTechnicianToolsScreenState
       setState(() {
         _tools = combined;
         _hasChanges = false;
+
+        // dynamic categories - default collapsed
+        final categories = combined.map((t) => t['category'] as String).toSet();
+        _expandedCategories.clear();
+        for (var c in categories) {
+          _expandedCategories[c] = false;
+        }
       });
     } catch (e) {
       debugPrint('❌ Error fetching technician tools: $e');
@@ -150,7 +157,7 @@ class _ManageTechnicianToolsScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Saved ${changedTools.length} changes'),
-          backgroundColor: Colors.green,
+          backgroundColor: const Color(0xFF003E70),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -209,9 +216,7 @@ class _ManageTechnicianToolsScreenState
       );
 
       if (pickedFile != null) {
-        setState(() {
-          _capturedImage = File(pickedFile.path);
-        });
+        setState(() {});
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -238,17 +243,20 @@ class _ManageTechnicianToolsScreenState
 
   /// Build tools by category with dropdown
   Widget _buildCategoryTools(String category) {
-    final filteredTools = _tools
-        .where((tool) => tool['category'] == category)
-        .toList();
+    final filteredTools =
+        _tools.where((tool) => tool['category'] == category).toList()..sort(
+          (a, b) => (a['name'] as String).toLowerCase().compareTo(
+            (b['name'] as String).toLowerCase(),
+          ),
+        );
 
     if (filteredTools.isEmpty) {
       return const SizedBox.shrink();
     }
 
     final isExpanded = _expandedCategories[category] ?? false;
-    final toolCount = filteredTools.length;
-    final okCount = filteredTools.where((t) => t['status'] == 'OK').length;
+    //final toolCount = filteredTools.length;
+    //final okCount = filteredTools.where((t) => t['status'] == 'OK').length;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
@@ -424,7 +432,7 @@ class _ManageTechnicianToolsScreenState
                                           ? 'Onhand'
                                           : 'None';
                                       print(
-                                        "✅ Tool ${tool['tools_id']} set to ${tool['status']}",
+                                        "Tool ${tool['tools_id']} set to ${tool['status']}",
                                       );
                                     });
                                     _checkForChanges();
@@ -500,8 +508,120 @@ class _ManageTechnicianToolsScreenState
     );
   }
 
+  /// Build the list of tools organized by category
+  Widget _buildToolsList() {
+    if (_tools.isEmpty) {
+      return const Center(child: Text('No tools found'));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Scanner Section (Updated)
+        Card(
+          elevation: 3,
+          margin: const EdgeInsets.only(bottom: 20),
+          child: InkWell(
+            onTap: _showScanner,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color.fromARGB(255, 0, 62, 112),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.qr_code_scanner,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Scan QR Code',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _scannedCode != null
+                              ? 'Last scan: $_scannedCode'
+                              : 'Tap to scan',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: _scannedCode != null
+                                ? Colors.green
+                                : Colors.grey.shade600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    _scannedCode != null
+                        ? Icons.check_circle
+                        : Icons.arrow_forward_ios,
+                    color: _scannedCode != null
+                        ? Colors.green
+                        : Colors.grey.shade400,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Tools Onhand Header
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'All tools',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                final allExpanded = _expandedCategories.values.every((e) => e);
+                setState(() {
+                  _expandedCategories.updateAll((key, value) => !allExpanded);
+                });
+              },
+              icon: Icon(
+                _expandedCategories.values.every((e) => e)
+                    ? Icons.unfold_less
+                    : Icons.unfold_more,
+              ),
+              label: Text(
+                _expandedCategories.values.every((e) => e)
+                    ? 'Collapse All'
+                    : 'Expand All',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildCategoryTools('PPE'),
+        _buildCategoryTools('GPON Tools'),
+        _buildCategoryTools('Common Tools'),
+        _buildCategoryTools('Additional Tools'),
+        const SizedBox(height: 80), // Space for FAB
+      ],
+    );
+  }
+
   /// Show QR/Barcode scanner
   Future<void> _showScanner() async {
+    /*
     final scannerController = MobileScannerController();
     bool scanned = false;
 
@@ -626,117 +746,7 @@ class _ManageTechnicianToolsScreenState
     // Just in case user swipes down to close the sheet
     await scannerController.stop();
     await scannerController.dispose();
-  }
-
-  /// Build the list of tools organized by category
-  Widget _buildToolsList() {
-    if (_tools.isEmpty) {
-      return const Center(child: Text('No tools found'));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Scanner Section (Updated)
-        Card(
-          elevation: 3,
-          margin: const EdgeInsets.only(bottom: 20),
-          child: InkWell(
-            onTap: _showScanner,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(255, 0, 62, 112),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.qr_code_scanner,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Scan QR Code',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _scannedCode != null
-                              ? 'Last scan: $_scannedCode'
-                              : 'Tap to scan a code',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _scannedCode != null
-                                ? Colors.green
-                                : Colors.grey.shade600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    _scannedCode != null
-                        ? Icons.check_circle
-                        : Icons.arrow_forward_ios,
-                    color: _scannedCode != null
-                        ? Colors.green
-                        : Colors.grey.shade400,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Tools Onhand Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Tools On-hand',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            TextButton.icon(
-              onPressed: () {
-                final allExpanded = _expandedCategories.values.every((e) => e);
-                setState(() {
-                  _expandedCategories.updateAll((key, value) => !allExpanded);
-                });
-              },
-              icon: Icon(
-                _expandedCategories.values.every((e) => e)
-                    ? Icons.unfold_less
-                    : Icons.unfold_more,
-              ),
-              label: Text(
-                _expandedCategories.values.every((e) => e)
-                    ? 'Collapse All'
-                    : 'Expand All',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildCategoryTools('PPE'),
-        _buildCategoryTools('GPON Tools'),
-        _buildCategoryTools('Common Tools'),
-        _buildCategoryTools('Additional Tools'),
-        const SizedBox(height: 80), // Space for FAB
-      ],
-    );
+    */
   }
 
   @override
@@ -763,9 +773,12 @@ class _ManageTechnicianToolsScreenState
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.save),
-              label: Text(_saving ? 'Saving...' : 'Save Changes'),
-              backgroundColor: Colors.green,
+                  : const Icon(Icons.save, color: Colors.white),
+              label: Text(
+                _saving ? 'Saving...' : 'Save Changes',
+                style: TextStyle(color: Colors.white),
+              ),
+              backgroundColor: const Color(0xFF003E70),
             )
           : null,
     );

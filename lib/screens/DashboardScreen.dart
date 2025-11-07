@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'TechniciansScreen.dart';
 
@@ -14,13 +15,60 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
+  String? _loggedUserName;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLoggedUser(); //
+  }
 
   late final List<Widget> _pages = [const DashboardPage(), TechniciansScreen()];
 
+  Future<void> _fetchLoggedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId');
+
+      if (userId == null) return;
+
+      final user = await Supabase.instance.client
+          .from('users')
+          .select('full_name')
+          .eq('id', userId)
+          .limit(1)
+          .maybeSingle();
+
+      if (user != null && user['full_name'] != null) {
+        setState(() {
+          _loggedUserName = user['full_name'];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching user: $e");
+    }
+  }
+
   Future<void> _handleLogout(BuildContext context) async {
     try {
+      // Clear saved credentials from shared preferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('username');
+      await prefs.remove('password');
+      await prefs.setBool('rememberMe', false);
+
+      // Sign out from Supabase (if using Supabase Auth)
       await Supabase.instance.client.auth.signOut();
-      if (mounted) context.go('/');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Logged out successfully'),
+            backgroundColor: Color(0xFF001F3A),
+          ),
+        );
+        context.go('/');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -40,53 +88,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
           padding: const EdgeInsets.all(10.0),
           child: Text(
             _selectedIndex == 0 ? 'Dashboard' : 'List of Technicians',
-            style: const TextStyle(
-              //fontWeight: FontWeight.bold,
-              color: Colors.white,
-              fontSize: 20,
-            ),
+            style: const TextStyle(color: Colors.white, fontSize: 20),
           ),
         ),
 
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.more_vert_outlined,
-              color: Color.fromARGB(255, 255, 255, 255),
-            ), // icon color
-            onSelected: (value) {
-              if (value == 'logout') {
-                _handleLogout(context);
-              } else if (value == 'add-tools') {
-                context.push('/add-tools');
-              }
-            },
-            itemBuilder: (BuildContext context) => [
-              const PopupMenuItem<String>(
-                value: 'add-tools',
-                child: Row(
-                  children: [
-                    Icon(Icons.add, size: 20, color: Color(0xFF001F3A)),
-                    SizedBox(width: 10),
-                    Text('Add Tools'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, size: 20, color: Colors.red),
-                    SizedBox(width: 10),
-                    Text('Logout'),
-                  ],
-                ),
-              ),
-            ],
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white),
+              onPressed: () {
+                Scaffold.of(context).openEndDrawer();
+              },
+            ),
           ),
         ],
       ),
+
+      // Side Drawer
+      endDrawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: Color.fromARGB(255, 0, 62, 112),
+              ),
+              child: Text(
+                "Hello, $_loggedUserName",
+                style: const TextStyle(color: Colors.white, fontSize: 20),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Manage Tools'),
+              onTap: () {
+                Navigator.pop(context); // close drawer
+                context.push('/add-tools');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('Export File'),
+              onTap: () {
+                Navigator.pop(context); // close drawer
+                context.push('/export-excel');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _handleLogout(context);
+              },
+            ),
+          ],
+        ),
+      ),
+
       body: _pages[_selectedIndex],
+
       bottomNavigationBar: BottomNavigationBar(
         selectedItemColor: Colors.white,
         currentIndex: _selectedIndex,
@@ -114,13 +175,14 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
+// Dashboard
 class _DashboardPageState extends State<DashboardPage> {
   int checkedTodayCount = 0;
 
   int technicianCount = 0;
   int totalToolsCount = 0;
-  int toolsOnHandCount = 0;
-  int toolsNotOnHandCount = 0;
+  int toolsOKCount = 0;
+  int toolsdefectiveCount = 0;
   int toolsUnassignedCount = 0;
   int toolsCheckedToday = 0;
   bool isLoading = true;
@@ -141,13 +203,11 @@ class _DashboardPageState extends State<DashboardPage> {
       final allTools = await supabase.from('tools').select();
       final technicianTools = await supabase
           .from('technician_tools')
-          .select(
-            'checked_at, status',
-          ); // ✅ use checked_at instead of created_at
+          .select('checked_at, status');
 
       // --- Initialize counts ---
-      int onHandCount = 0;
-      int notOnHandCount = 0;
+      int OKCount = 0;
+      int defectiveCount = 0;
       int checkedToday = 0;
 
       final today = DateTime.now();
@@ -157,11 +217,11 @@ class _DashboardPageState extends State<DashboardPage> {
             ? DateTime.parse(tool['checked_at'])
             : null;
 
-        // ✅ Count based on status
-        if (tool['status'] == 'Onhand') {
-          onHandCount++;
-        } else if (tool['status'] == 'None') {
-          notOnHandCount++;
+        // Count based on status
+        if (tool['status'] == 'None') {
+          OKCount++;
+        } else if (tool['status'] == 'Defective') {
+          defectiveCount++;
         }
 
         // 📅 Count tools checked/updated today
@@ -180,8 +240,8 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         technicianCount = technicians.length;
         totalToolsCount = totalTools;
-        toolsOnHandCount = onHandCount;
-        toolsNotOnHandCount = notOnHandCount;
+        toolsOKCount = OKCount;
+        toolsdefectiveCount = defectiveCount;
         toolsUnassignedCount = 0;
         checkedTodayCount = checkedToday;
         isLoading = false;
@@ -225,26 +285,26 @@ class _DashboardPageState extends State<DashboardPage> {
                         mainAxisSpacing: 16,
                         children: [
                           DashboardBox(
-                            title: 'Technicians',
+                            title: 'Total no. of Technicians',
                             count: technicianCount.toString(),
                             icon: Icons.engineering,
                             color: Colors.blue,
                           ),
                           DashboardBox(
-                            title: 'Total Tools',
+                            title: 'Total no. of Tools',
                             count: totalToolsCount.toString(),
                             icon: Icons.build,
                             color: Colors.purple,
                           ),
                           DashboardBox(
                             title: 'OK Tools',
-                            count: toolsOnHandCount.toString(),
+                            count: toolsOKCount.toString(),
                             icon: Icons.check_circle,
                             color: Colors.green,
                           ),
                           DashboardBox(
                             title: 'Defective Tools',
-                            count: toolsNotOnHandCount.toString(),
+                            count: toolsdefectiveCount.toString(),
                             icon: Icons.cancel,
                             color: Colors.red,
                           ),
@@ -272,7 +332,7 @@ class _DashboardPageState extends State<DashboardPage> {
 class DashboardBox extends StatelessWidget {
   final String title;
   final String count;
-  final IconData icon;
+  final IconData? icon;
   final Color color;
 
   const DashboardBox({
@@ -288,7 +348,7 @@ class DashboardBox extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withOpacity(0.3), width: 1),
         boxShadow: [
           BoxShadow(

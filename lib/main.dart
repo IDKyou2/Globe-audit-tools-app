@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tools_audit_app/screens/ExportExcelPage.dart';
 import 'screens/LoginScreen.dart';
 import 'screens/DashboardScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -42,6 +43,10 @@ Future<void> main() async {
       GoRoute(
         path: '/technician-tools',
         builder: (context, state) => const TechnicianToolsPage(),
+      ),
+      GoRoute(
+        path: '/export-excel',
+        builder: (context, state) => const ExportExcelPage(),
       ),
     ],
   );
@@ -96,7 +101,7 @@ class MyApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF001F3A),
+          backgroundColor: Color(0xFF001F3A), //Blue
           selectedItemColor: Colors.lightBlueAccent,
           unselectedItemColor: Colors.white54,
         ),
