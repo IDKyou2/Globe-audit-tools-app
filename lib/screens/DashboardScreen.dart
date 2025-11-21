@@ -1,10 +1,11 @@
-// ignore_for_file: file_names
-
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'TechniciansScreen.dart';
+import '../main.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -20,7 +21,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchLoggedUser(); //
+    _fetchLoggedUser();
   }
 
   late final List<Widget> _pages = [const DashboardPage(), TechniciansScreen()];
@@ -51,20 +52,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _handleLogout(BuildContext context) async {
     try {
-      // Clear saved credentials from shared preferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('username');
       await prefs.remove('password');
       await prefs.setBool('rememberMe', false);
 
-      // Sign out from Supabase (if using Supabase Auth)
       await Supabase.instance.client.auth.signOut();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Logged out successfully'),
-            backgroundColor: Color(0xFF001F3A),
+          SnackBar(
+            content: const Text(
+              'Logged out successfully.',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            //backgroundColor: Theme.of(context).colorScheme.primary,
+            backgroundColor: Colors.white,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         context.go('/');
@@ -80,94 +87,148 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: colorScheme.background,
       appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 0, 62, 112),
+        backgroundColor: isDark
+            ? colorScheme.surfaceVariant
+            : const Color(0xFF003E70),
         elevation: 2,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
         title: Padding(
           padding: const EdgeInsets.all(10.0),
           child: Text(
-            _selectedIndex == 0 ? 'Dashboard' : 'List of Technicians',
-            style: const TextStyle(color: Colors.white, fontSize: 20),
+            _selectedIndex == 0 ? 'Dashboard' : 'Technicians List',
+            style: TextStyle(
+              color: isDark ? colorScheme.onSurface : Colors.white,
+              fontSize: 20,
+            ),
           ),
         ),
-
         actions: [
           Builder(
             builder: (context) => IconButton(
-              icon: const Icon(Icons.menu, color: Colors.white),
-              onPressed: () {
-                Scaffold.of(context).openEndDrawer();
-              },
+              icon: Icon(
+                Icons.menu,
+                color: isDark ? colorScheme.onSurface : Colors.white,
+              ),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
             ),
           ),
         ],
       ),
-
-      // Side Drawer
-      endDrawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(
-                color: Color.fromARGB(255, 0, 62, 112),
-              ),
-              child: Text(
-                "Hello, $_loggedUserName",
-                style: const TextStyle(color: Colors.white, fontSize: 20),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('Manage Tools'),
-              onTap: () {
-                Navigator.pop(context); // close drawer
-                context.push('/add-tools');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.download),
-              title: const Text('Export File'),
-              onTap: () {
-                Navigator.pop(context); // close drawer
-                context.push('/export-excel');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(context);
-                _handleLogout(context);
-              },
-            ),
-          ],
-        ),
-      ),
-
+      endDrawer: _buildDrawer(context, isDark, colorScheme),
       body: _pages[_selectedIndex],
+      bottomNavigationBar: _buildBottomNavBar(isDark, colorScheme),
+    );
+  }
 
-      bottomNavigationBar: BottomNavigationBar(
-        selectedItemColor: Colors.white,
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
+  Widget _buildDrawer(
+    BuildContext context,
+    bool isDark,
+    ColorScheme colorScheme,
+  ) {
+    return Drawer(
+      backgroundColor: colorScheme.surface,
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              color: isDark
+                  ? colorScheme.primaryContainer
+                  : const Color(0xFF003E70),
+            ),
+            child: Text(
+              _loggedUserName ?? '',
+              style: TextStyle(
+                color: isDark ? colorScheme.onPrimaryContainer : Colors.white,
+                fontSize: 20,
+              ),
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.engineering),
-            label: 'Technicians',
+          ListTile(
+            leading: Icon(
+              isDark ? Icons.dark_mode : Icons.light_mode,
+              color: colorScheme.primary,
+            ),
+            title: Text(
+              'Dark Mode',
+              style: TextStyle(color: colorScheme.onSurface),
+            ),
+            trailing: Switch(
+              value: isDark,
+              onChanged: (value) => MyApp.of(context)?.toggleTheme(value),
+              activeColor: colorScheme.primary,
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: Icon(Icons.add, color: colorScheme.primary),
+            title: Text(
+              'Manage Tools',
+              style: TextStyle(color: colorScheme.onSurface),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/add-tools');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.download, color: colorScheme.primary),
+            title: Text(
+              'Export File',
+              style: TextStyle(color: colorScheme.onSurface),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/export-excel');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              _handleLogout(context);
+            },
           ),
         ],
       ),
     );
   }
+
+  Widget _buildBottomNavBar(bool isDark, ColorScheme colorScheme) {
+    return BottomNavigationBar(
+      backgroundColor: isDark
+          ? colorScheme.surfaceVariant
+          : const Color(0xFF003E70),
+      selectedItemColor: Colors.white,
+      unselectedItemColor: isDark
+          ? colorScheme.onSurfaceVariant
+          : Colors.white70,
+      currentIndex: _selectedIndex,
+      onTap: (index) => setState(() => _selectedIndex = index),
+      items: const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.dashboard),
+          label: 'Dashboard',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.engineering),
+          label: 'Manage Technicians',
+        ),
+      ],
+    );
+  }
 }
 
-// Dashboard Page
+// ==================== Dashboard Page ====================
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -175,16 +236,14 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-// Dashboard
 class _DashboardPageState extends State<DashboardPage> {
-  int checkedTodayCount = 0;
+  Map<String, int> technicianDefectiveCounts = {}; // name -> defective count
 
+  int checkedTodayCount = 0;
   int technicianCount = 0;
   int totalToolsCount = 0;
-  int toolsOKCount = 0;
-  int toolsdefectiveCount = 0;
-  int toolsUnassignedCount = 0;
-  int toolsCheckedToday = 0;
+  int toolsOnhandCount = 0;
+  int toolsDefectiveCount = 0;
   bool isLoading = true;
 
   @override
@@ -198,15 +257,13 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() => isLoading = true);
 
     try {
-      // --- Fetch all data from tables ---
       final technicians = await supabase.from('technicians').select();
       final allTools = await supabase.from('tools').select();
       final technicianTools = await supabase
           .from('technician_tools')
           .select('checked_at, status');
 
-      // --- Initialize counts ---
-      int OKCount = 0;
+      int onhandCount = 0;
       int defectiveCount = 0;
       int checkedToday = 0;
 
@@ -217,14 +274,12 @@ class _DashboardPageState extends State<DashboardPage> {
             ? DateTime.parse(tool['checked_at'])
             : null;
 
-        // Count based on status
-        if (tool['status'] == 'None') {
-          OKCount++;
+        if (tool['status'] == 'Onhand') {
+          onhandCount++;
         } else if (tool['status'] == 'Defective') {
           defectiveCount++;
         }
 
-        // 📅 Count tools checked/updated today
         if (checkedAt != null &&
             checkedAt.year == today.year &&
             checkedAt.month == today.month &&
@@ -233,21 +288,18 @@ class _DashboardPageState extends State<DashboardPage> {
         }
       }
 
-      final totalTools = allTools.length;
-
       if (!mounted) return;
 
       setState(() {
         technicianCount = technicians.length;
-        totalToolsCount = totalTools;
-        toolsOKCount = OKCount;
-        toolsdefectiveCount = defectiveCount;
-        toolsUnassignedCount = 0;
+        totalToolsCount = allTools.length;
+        toolsOnhandCount = onhandCount;
+        toolsDefectiveCount = defectiveCount;
         checkedTodayCount = checkedToday;
         isLoading = false;
       });
     } catch (e) {
-      debugPrint('❌ Error fetching dashboard data: $e');
+      debugPrint('Error fetching dashboard data: $e');
       if (mounted) {
         setState(() => isLoading = false);
         ScaffoldMessenger.of(
@@ -259,84 +311,218 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return RefreshIndicator(
       onRefresh: _fetchDashboardData,
       child: SafeArea(
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: isLoading
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(40),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
-                    : GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        children: [
-                          DashboardBox(
-                            title: 'Total no. of Technicians',
-                            count: technicianCount.toString(),
-                            icon: Icons.engineering,
-                            color: Colors.blue,
-                          ),
-                          DashboardBox(
-                            title: 'Total no. of Tools',
-                            count: totalToolsCount.toString(),
-                            icon: Icons.build,
-                            color: Colors.purple,
-                          ),
-                          DashboardBox(
-                            title: 'OK Tools',
-                            count: toolsOKCount.toString(),
-                            icon: Icons.check_circle,
-                            color: Colors.green,
-                          ),
-                          DashboardBox(
-                            title: 'Defective Tools',
-                            count: toolsdefectiveCount.toString(),
-                            icon: Icons.cancel,
-                            color: Colors.red,
-                          ),
-                          /*
-                          DashboardBox(
-                            title: 'Unassigned Tools',
-                            count: toolsUnassignedCount.toString(),
-                            icon: Icons.inventory_2,
-                            color: Colors.grey,
-                          ),
-                          */
-                        ],
-                      ),
-              ),
-              const SizedBox(height: 40),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: isLoading
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(40),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      buildDateHeader(isDark),
+                      const SizedBox(height: 20),
+                      buildDashboardCards(isDark),
+                      const SizedBox(height: 40),
+                      buildPieChart(isDark),
+                      const SizedBox(height: 30),
+                    ],
+                  ),
           ),
         ),
       ),
     );
   }
+
+  Widget buildDateHeader(bool isDark) {
+    return Row(
+      children: [
+        Text(
+          "Date: ",
+          style: TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+        Text(
+          DateFormat('MMMM dd, yyyy').format(DateTime.now()),
+          style: TextStyle(
+            fontFamily: 'Roboto',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget buildDashboardCards(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [Colors.grey.shade900, Colors.grey.shade800]
+              : [Colors.white, Colors.grey.shade50],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            children: [
+              _DashboardCard(
+                title: 'Total Technicians',
+                count: technicianCount.toString(),
+                icon: Icons.engineering,
+                color: Colors.orange,
+              ),
+              _DashboardCard(
+                title: 'Tools Total',
+                count: totalToolsCount.toString(),
+                icon: Icons.build,
+                color: Colors.blue,
+              ),
+              _DashboardCard(
+                title: 'Tools Onhand',
+                count: toolsOnhandCount.toString(),
+                icon: Icons.check_circle,
+                color: Colors.green,
+              ),
+              _DashboardCard(
+                title: 'Defective Tools',
+                count: toolsDefectiveCount.toString(),
+                icon: Icons.warning,
+                color: Colors.red,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildPieChart(bool isDark) {
+    return Container(
+      height: 400,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [Colors.grey.shade900, Colors.grey.shade800]
+              : [Colors.white, Colors.grey.shade50],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: PieChart(
+              PieChartData(
+                sectionsSpace: 3,
+                centerSpaceRadius: 65,
+                startDegreeOffset: -90,
+                sections: [
+                  _buildPieSection(
+                    toolsOnhandCount.toDouble(),
+                    Colors.green,
+                    Icons.check_circle,
+                  ),
+                  _buildPieSection(
+                    toolsDefectiveCount.toDouble(),
+                    Colors.red,
+                    Icons.warning,
+                  ),
+                  _buildPieSection(
+                    technicianCount.toDouble(),
+                    Colors.orange,
+                    Icons.engineering,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _LegendItem('On-hand', Colors.green, toolsOnhandCount),
+              _LegendItem('Defective', Colors.red, toolsDefectiveCount),
+              _LegendItem('Technicians', Colors.orange, technicianCount),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  PieChartSectionData _buildPieSection(
+    double value,
+    Color color,
+    IconData icon,
+  ) {
+    return PieChartSectionData(
+      value: value,
+      title: '${value.toInt()}',
+      color: color,
+      radius: 65,
+      titleStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+      ),
+      badgeWidget: _ChartBadge(icon: icon, color: color),
+      badgePositionPercentageOffset: 1.4,
+    );
+  }
 }
 
-// Reusable Dashboard Box Widget
-class DashboardBox extends StatelessWidget {
+// ==================== Helper Widgets ====================
+class _DashboardCard extends StatelessWidget {
   final String title;
   final String count;
-  final IconData? icon;
+  final IconData icon;
   final Color color;
 
-  const DashboardBox({
-    super.key,
+  const _DashboardCard({
     required this.title,
     required this.count,
     required this.icon,
@@ -347,45 +533,111 @@ class DashboardBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        gradient: LinearGradient(
+          colors: [color, color.withOpacity(0.9)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 8,
-            offset: const Offset(0, 2),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 32, color: color),
+          Icon(icon, size: 32, color: Colors.white),
           const SizedBox(height: 8),
           Text(
             count,
-            style: TextStyle(
-              fontSize: 32,
+            style: const TextStyle(
+              fontSize: 28,
               fontWeight: FontWeight.bold,
-              color: color,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade700,
-              ),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.white70,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ChartBadge extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _ChartBadge({required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 8,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Icon(icon, size: 20, color: color),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final String label;
+  final Color color;
+  final int count;
+
+  const _LegendItem(this.label, this.color, this.count);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$count',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

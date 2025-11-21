@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tools_audit_app/screens/ExportExcelPage.dart';
+import 'package:tools_audit_app/screens/SignupPage.dart';
 import 'screens/LoginScreen.dart';
 import 'screens/DashboardScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,14 +9,27 @@ import 'screens/TechnicianToolsPage.dart';
 import 'screens/TechniciansScreen.dart';
 import 'screens/ManageTechnicianToolsScreen.dart';
 import 'screens/AddNewToolPage.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await dotenv.load(fileName: ".env");
+
+  final supabaseURL = dotenv.env['supabaseURL'];
+  final supabaseAnonKey = dotenv.env['supabaseAnonKey'];
+
+  if (supabaseURL == null) {
+    throw Exception("supabaseURL is missing in .env");
+  }
+  if (supabaseAnonKey == null) {
+    throw Exception("supabaseAnonKey is missing in .env");
+  }
+
   await Supabase.initialize(
-    url: 'https://bmgpiypezsejajmejxba.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJtZ3BpeXBlenNlamFqbWVqeGJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1OTAxNjMsImV4cCI6MjA3NjE2NjE2M30.d1We_aPd2ziXNTzhlL33utEn1edUFsGH05LeVUVEhvk',
+    url: supabaseURL,
+    anonKey: supabaseAnonKey,
+    // print(supabaseURL);
   );
 
   final router = GoRouter(
@@ -48,25 +62,47 @@ Future<void> main() async {
         path: '/export-excel',
         builder: (context, state) => const ExportExcelPage(),
       ),
+      GoRoute(
+        path: '/signup',
+        builder: (context, state) => const SignupScreen(),
+      ),
     ],
   );
 
   runApp(MyApp(router: router));
 }
 
-class MyApp extends StatelessWidget {
-  final supabase = Supabase.instance.client;
+class MyApp extends StatefulWidget {
   final GoRouter router;
-  MyApp({required this.router, super.key});
+  const MyApp({required this.router, super.key});
 
+  // Add this static method
+  static _MyAppState? of(BuildContext context) {
+    return context.findAncestorStateOfType<_MyAppState>();
+  }
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.system; // default
+
+  // Change this method name from _toggleTheme to toggleTheme (remove underscore)
+  void toggleTheme(bool isDark) {
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+  }
+
+  // Add this getter
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      routerConfig: router,
+      routerConfig: widget.router,
       title: 'Tools Audit App',
       debugShowCheckedModeBanner: false,
-
-      // Light theme
       theme: ThemeData(
         brightness: Brightness.light,
         primaryColor: const Color(0xFF003E70),
@@ -78,18 +114,8 @@ class MyApp extends StatelessWidget {
           backgroundColor: Color(0xFF003E70),
           foregroundColor: Colors.white,
         ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF003E70),
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.white70,
-        ),
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-          color: Color(0xFF003E70),
-        ),
         useMaterial3: true,
       ),
-
-      // 🌙 Dark theme
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
@@ -100,19 +126,9 @@ class MyApp extends StatelessWidget {
           backgroundColor: Color(0xFF001F3A),
           foregroundColor: Colors.white,
         ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF001F3A), //Blue
-          selectedItemColor: Colors.lightBlueAccent,
-          unselectedItemColor: Colors.white54,
-        ),
-        progressIndicatorTheme: const ProgressIndicatorThemeData(
-          color: Colors.lightBlueAccent,
-        ),
         useMaterial3: true,
       ),
-
-      // Auto-switch based on system settings
-      themeMode: ThemeMode.system,
+      themeMode: _themeMode,
     );
   }
 }

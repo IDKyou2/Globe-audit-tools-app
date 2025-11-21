@@ -134,15 +134,14 @@ class _ManageTechnicianToolsScreenState
       }
 
       // Prepare updated data for Supabase
-      final updates = changedTools
-          .map(
-            (tool) => {
-              'technician_id': technicianId,
-              'tools_id': tool['tools_id'],
-              'status': tool['status'],
-            },
-          )
-          .toList();
+      final updates = changedTools.map((tool) {
+        return {
+          'technician_id': technicianId,
+          'tools_id': tool['tools_id'],
+          'status': tool['status'],
+          'last_updated_at': DateTime.now().toIso8601String(),
+        };
+      }).toList();
 
       await _supabase.from('technician_tools').upsert(updates);
 
@@ -301,15 +300,6 @@ class _ManageTechnicianToolsScreenState
                             color: Colors.white,
                           ),
                         ),
-                        /*
-                        Text(
-                          '$okCount / $toolCount tools',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        */
                       ],
                     ),
                   ),
@@ -322,8 +312,6 @@ class _ManageTechnicianToolsScreenState
               ),
             ),
           ),
-
-          // Tools list with labels header (shown when expanded)
           if (isExpanded) ...[
             // Column Headers
             Container(
@@ -414,8 +402,6 @@ class _ManageTechnicianToolsScreenState
                       ),
                     ),
                     const SizedBox(width: 8),
-
-                    // Checkboxes
                     Expanded(
                       flex: 4,
                       child: Row(

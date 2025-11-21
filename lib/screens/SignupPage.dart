@@ -1,173 +1,123 @@
-import 'package:bcrypt/bcrypt.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:bcrypt/bcrypt.dart'; //for hashing
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
 
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  SignupPage createState() => SignupPage(); // State class named SignupPage
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class SignupPage extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _loading = false;
-  bool _rememberMe = false;
   bool _showPassword = false;
-
-  final _secureStorage = const FlutterSecureStorage();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSavedCredentials();
-  }
 
   @override
   void dispose() {
     _usernameController.dispose();
+    _fullNameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedUsername = prefs.getString('username');
-    final rememberMe = prefs.getBool('rememberMe') ?? false;
-
-    if (rememberMe && savedUsername != null) {
-      final savedPassword = await _secureStorage.read(key: 'password');
-      if (savedPassword != null) {
-        setState(() {
-          _usernameController.text = savedUsername;
-          _passwordController.text = savedPassword;
-          _rememberMe = true;
-        });
-        if (mounted) _login(autoLogin: true);
-      }
-    }
-  }
-
-  Future<void> _saveCredentials(
-    String userId,
-    String username,
-    String password,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('userId', userId);
-
-    if (_rememberMe) {
-      await prefs.setString('username', username);
-      await prefs.setBool('rememberMe', true);
-      await _secureStorage.write(
-        key: 'password',
-        value: password,
-      ); // secure password storage
-    } else {
-      await prefs.remove('username');
-      await prefs.remove('password');
-      await prefs.setBool('rememberMe', false);
-      await _secureStorage.delete(key: 'password');
-    }
-  }
-
-  Future<void> _clearCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('username');
-    await prefs.remove('password');
-    await prefs.setBool('rememberMe', false);
-    await _secureStorage.delete(key: 'password');
-  }
-
-  Future<void> _login({bool autoLogin = false}) async {
-    if (!autoLogin && !_formKey.currentState!.validate()) return;
+  Future<void> _signup() async {
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _loading = true);
+
     final username = _usernameController.text.trim();
+    final fullName = _fullNameController.text.trim();
     final password = _passwordController.text.trim();
-    final supabase = Supabase.instance.client;
 
     try {
-      // Fetch the user by username only (do NOT filter by password)
-      final response = await supabase
+      final supabase = Supabase.instance.client;
+
+      // Check if username already exists
+      final existing = await supabase
           .from('users')
           .select()
-          .eq('username', username)
-          .maybeSingle();
+          .eq('username', username);
 
-      if (response == null) {
-        // User not found
+      if (existing.isNotEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Invalid username or password'),
-              backgroundColor: Colors.redAccent,
-              behavior: SnackBarBehavior.floating,
+          await showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Username taken'),
+              content: const Text('That username is already in use.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
             ),
           );
         }
-        await _clearCredentials();
-      } else {
-        final hashedPassword = response['password'] as String;
+        return;
+      }
 
-        // Verify the password using bcrypt
-        final passwordMatches = BCrypt.checkpw(password, hashedPassword);
+      // Hash password using bcrypt
+      final hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
 
-        if (!passwordMatches) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Invalid username or password'),
-                backgroundColor: Colors.redAccent,
-                behavior: SnackBarBehavior.floating,
+      // Insert user into database
+      final response = await supabase.from('users').insert({
+        'username': username,
+        'full_name': fullName,
+        'password': hashedPassword,
+      }).maybeSingle();
+
+      if (response != null && mounted) {
+        // Show success dialog
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Account Created'),
+            content: const Text('Your account was created successfully!'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context); // Close dialog
+                  context.go('/'); // Redirect to login
+                },
+                child: const Text('OK'),
               ),
-            );
-          }
-          await _clearCredentials();
-          return;
-        }
-
-        // Password correct
-        final userId = response['id'];
-        await _saveCredentials(userId, username, password);
-
-        if (mounted && !autoLogin) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Welcome, $username!',
-                style: const TextStyle(color: Colors.white),
-              ),
-              backgroundColor: const Color(0xFF003E70),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-
-        // Navigate immediately
-        if (mounted) context.go('/dashboard');
+            ],
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Error'),
+            content: Text('$e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+      _usernameController.clear();
+      _fullNameController.clear();
+      _passwordController.clear();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -196,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text(
-                        'Welcome',
+                        'Create Account',
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
@@ -205,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'Login to your account',
+                        'Sign up to get started',
                         style: TextStyle(fontSize: 16, color: Colors.black54),
                       ),
                       const SizedBox(height: 32),
@@ -222,6 +172,22 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         validator: (value) => value == null || value.isEmpty
                             ? 'Enter username'
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Full name
+                      TextFormField(
+                        controller: _fullNameController,
+                        decoration: InputDecoration(
+                          labelText: 'Full Name',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          prefixIcon: const Icon(Icons.account_circle),
+                        ),
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'Enter Full Name'
                             : null,
                       ),
                       const SizedBox(height: 16),
@@ -249,32 +215,19 @@ class _LoginScreenState extends State<LoginScreen> {
                             },
                           ),
                         ),
-                        validator: (value) => value == null || value.isEmpty
-                            ? 'Enter password'
-                            : null,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Enter password';
+                          }
+                          if (value.length < 6) {
+                            return 'Password must be at least 6 characters';
+                          }
+                          return null;
+                        },
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
 
-                      // Remember Me
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: _rememberMe,
-                            onChanged: (value) {
-                              setState(() {
-                                _rememberMe = value ?? false;
-                              });
-                            },
-                          ),
-                          const Text(
-                            'Remember me',
-                            style: TextStyle(fontSize: 14),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Login Button
+                      // Signup Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -285,7 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: _loading ? null : () => _login(),
+                          onPressed: _loading ? null : _signup,
                           child: _loading
                               ? const SizedBox(
                                   height: 20,
@@ -296,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 )
                               : const Text(
-                                  'Login',
+                                  'Sign Up',
                                   style: TextStyle(
                                     fontSize: 16,
                                     color: Colors.white,
@@ -306,13 +259,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Signup
+                      // Already have account
                       GestureDetector(
                         onTap: () {
-                          context.go('/signup'); // navigate to signup page
+                          context.push('/');
+                          //context.go('/login'); // Navigate to login
                         },
                         child: const Text(
-                          "Don't have an account? Sign up",
+                          "Already have an account? Login",
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,

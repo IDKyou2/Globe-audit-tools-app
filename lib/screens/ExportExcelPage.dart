@@ -20,91 +20,107 @@ class _ExportExcelPageState extends State<ExportExcelPage> {
     try {
       final supabase = Supabase.instance.client;
 
-      // ✅ Include category in query
+      // 🔹 Fetch technician + tool data including created_at for sorting
       final rows = await supabase.from('technician_tools').select('''
-      technicians:technicians!technician_tools_technician_id_fkey(name),
+      technicians:technicians!technician_tools_technician_id_fkey(name, updated_at),
       tools:tools!technician_tools_tools_id_fkey(name, category),
       status
     ''');
 
-      // ✅ Distinct sorted technicians A–Z
-      final techNames =
-          rows.map((r) => r['technicians']['name'] as String).toSet().toList()
-            ..sort();
-
-      // ✅ Categorize and sort tools
-      final Map<String, Set<String>> categorizedTools = {};
+      // 🔹 Extract technicians with created_at
+      final techMap = <String, DateTime>{};
 
       for (final r in rows) {
-        final toolName = r['tools']['name'] as String;
-        final category = r['tools']['category'] as String? ?? "Uncategorized";
+        final name = r['technicians']['name'];
+        final createdAt = DateTime.parse(r['technicians']['updated_at']);
+        techMap[name] = createdAt; // newest overwrites, OK
+      }
+
+      // 🔹 Sort technicians by CREATED_AT (oldest → newest)
+      final techNames = techMap.keys.toList()
+        ..sort((a, b) => techMap[a]!.compareTo(techMap[b]!));
+
+      // 🔹 Categorize tools
+      final categorizedTools = <String, Set<String>>{};
+      for (final r in rows) {
+        final tool = r['tools']['name'];
+        final category = r['tools']['category'] ?? "Uncategorized";
+
         categorizedTools.putIfAbsent(category, () => <String>{});
-        categorizedTools[category]!.add(toolName);
+        categorizedTools[category]!.add(tool);
       }
 
       final sortedCategories = categorizedTools.keys.toList()..sort();
 
-      // ✅ Create matrix
-      final Map<String, Map<String, String>> table = {};
+      // 🔹 Create table matrix
+      final table = <String, Map<String, String>>{};
       for (final category in sortedCategories) {
         for (final tool in categorizedTools[category]!.toList()..sort()) {
-          table[tool] = {};
-          for (final tech in techNames) {
-            table[tool]![tech] = "None";
-          }
+          table[tool] = {for (var tech in techNames) tech: "None"};
         }
       }
 
-      // ✅ Fill values
+      // 🔹 Fill table values
       for (final r in rows) {
         final tech = r['technicians']['name'];
         final tool = r['tools']['name'];
-        final status = (r['status'] ?? "");
+        final status = r['status'] ?? "None";
 
-        if (status == "Onhand") {
-          table[tool]![tech] = "Onhand";
-        } else if (status == "Defective") {
-          table[tool]![tech] = "Defective";
-        } else if (status == "Missing") {
-          table[tool]![tech] = "Missing";
-        } else {
-          table[tool]![tech] = "None";
-        }
+        table[tool]![tech] = status;
       }
 
-      // ✅ Prepare Excel
+      // 🔹 Prepare Excel
       final excel = Excel.createExcel();
       final boldStyle = CellStyle(
         bold: true,
         fontFamily: getFontFamily(FontFamily.Arial),
       );
 
-      final today = DateTime.now();
-      final yyyy = today.year.toString();
-      final mm = today.month.toString().padLeft(2, '0');
-      final dd = today.day.toString().padLeft(2, '0');
-      //final sheetName = "$mm-$dd-$yyyy";
+      final defectiveStyle = CellStyle(
+        bold: true,
+        fontColorHex: ExcelColor.red,
+        fontFamily: getFontFamily(FontFamily.Arial),
+      );
 
-      //final sheet = excel[sheetName];
+      final missingStyle = CellStyle(
+        bold: true,
+        fontColorHex: ExcelColor.orange,
+        fontFamily: getFontFamily(FontFamily.Arial),
+      );
+
+      final onhandStyle = CellStyle(
+        bold: true,
+        fontColorHex: ExcelColor.green900,
+        fontFamily: getFontFamily(FontFamily.Arial),
+      );
+
+      final now = DateTime.now();
       final sheet = excel['Sheet1'];
 
-      // ✅ Header row
+      // 🔹 Header row
       sheet.appendRow([
         TextCellValue("Tools"),
         ...techNames.map((t) => TextCellValue(t)),
       ]);
 
-      // ✅ Append categorized tools
+      // Apply header formatting
+      for (var col = 0; col <= techNames.length; col++) {
+        sheet
+                .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+                .cellStyle =
+            boldStyle;
+      }
+
+      // 🔹 Insert Tools + Statuses
       for (final category in sortedCategories) {
-        // ✅ Category header row (bold)
-        final categoryRowIndex = sheet.maxRows;
+        final headerRow = sheet.maxRows;
 
         sheet.appendRow([TextCellValue(category)]);
         sheet
                 .cell(
                   CellIndex.indexByColumnRow(
                     columnIndex: 0,
-                    rowIndex: categoryRowIndex,
+                    rowIndex: headerRow,
                   ),
                 )
                 .cellStyle =
@@ -113,34 +129,53 @@ class _ExportExcelPageState extends State<ExportExcelPage> {
         final sortedTools = categorizedTools[category]!.toList()..sort();
 
         for (final tool in sortedTools) {
+          final rowIndex = sheet.maxRows;
+
           sheet.appendRow([
             TextCellValue(tool),
-            ...techNames.map(
-              (tech) => TextCellValue(table[tool]![tech] ?? "None"),
-            ),
+            ...techNames.map((tech) => TextCellValue(table[tool]![tech]!)),
           ]);
+
+          // Apply conditional color styles
+          for (var col = 1; col <= techNames.length; col++) {
+            final cell = sheet.cell(
+              CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex),
+            );
+
+            final value = cell.value.toString();
+
+            if (value == "Defective") {
+              cell.cellStyle = defectiveStyle;
+            } else if (value == "Missing") {
+              cell.cellStyle = missingStyle;
+            } else if (value == "Onhand") {
+              cell.cellStyle = onhandStyle;
+            }
+          }
         }
       }
 
-      // ✅ Save Excel
+      // 🔹 Save to Downloads
       final dir = Directory("/storage/emulated/0/Download");
-      final fileName = "Tools-Audit-$mm-$dd-$yyyy.xlsx";
-      final path = "${dir.path}/$fileName";
+      final fileName = "Tools-Audit-${now.month}-${now.day}-${now.year}.xlsx";
+      final file = File("${dir.path}/$fileName");
 
-      final file = File(path);
       await file.writeAsBytes(excel.encode()!);
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Excel saved!\n$path")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Excel saved!\n${file.path}"),
+            backgroundColor: Color(0xFF001F3A),
+          ),
+        );
       }
     } catch (e) {
       debugPrint("Export error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
       }
     }
   }
@@ -154,15 +189,56 @@ class _ExportExcelPageState extends State<ExportExcelPage> {
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Center(
-        child: ElevatedButton(
-          onPressed: _exporting
-              ? null
-              : () async {
-                  setState(() => _exporting = true);
-                  await exportExcel();
-                  setState(() => _exporting = false);
-                },
-          child: Text("Export to Excel"),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.file_download,
+              size: 80,
+              color: Color.fromARGB(255, 0, 62, 112),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Export Tools Audit to Excel',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'The file will be saved in your Downloads folder',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 30),
+            ElevatedButton.icon(
+              onPressed: _exporting
+                  ? null
+                  : () async {
+                      setState(() => _exporting = true);
+                      await exportExcel();
+                      setState(() => _exporting = false);
+                    },
+              icon: _exporting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.download, color: Colors.white),
+              label: Text(
+                _exporting ? "Exporting..." : "Export to Excel",
+                style: TextStyle(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF003E70),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
