@@ -258,7 +258,8 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
           SnackBar(
             content: Text('Technician $name added successfully!'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF003E70),
+            backgroundColor: Colors.green,
+            //backgroundColor: const Color(0xFF003E70),
           ),
         );
         _nameController.clear();
@@ -470,7 +471,8 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Technician deleted successfully!'),
-                      backgroundColor: Color(0xFF003E70),
+                      backgroundColor: Colors.green,
+                      //backgroundColor: Color(0xFF003E70),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
@@ -760,7 +762,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                                     elevation: 0,
                                   ),
                                   child: Text(
-                                    'Tools',
+                                    'Check Tools',
                                     style: TextStyle(
                                       color: isDarkMode
                                           ? Colors.white

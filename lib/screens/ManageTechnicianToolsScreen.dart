@@ -156,8 +156,9 @@ class _ManageTechnicianToolsScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Saved ${changedTools.length} changes'),
-          backgroundColor: const Color(0xFF003E70),
+          backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
@@ -503,7 +504,8 @@ class _ManageTechnicianToolsScreenState
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Scanner Section (Updated)
+        /*
+        // Scanner Section
         Card(
           elevation: 3,
           margin: const EdgeInsets.only(bottom: 20),
@@ -519,6 +521,7 @@ class _ManageTechnicianToolsScreenState
                       color: const Color.fromARGB(255, 0, 62, 112),
                       borderRadius: BorderRadius.circular(12),
                     ),
+
                     child: const Icon(
                       Icons.qr_code_scanner,
                       color: Colors.white,
@@ -526,6 +529,7 @@ class _ManageTechnicianToolsScreenState
                     ),
                   ),
                   const SizedBox(width: 16),
+
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -554,6 +558,7 @@ class _ManageTechnicianToolsScreenState
                       ],
                     ),
                   ),
+
                   Icon(
                     _scannedCode != null
                         ? Icons.check_circle
@@ -567,6 +572,7 @@ class _ManageTechnicianToolsScreenState
             ),
           ),
         ),
+        */
         // Tools Onhand Header
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
