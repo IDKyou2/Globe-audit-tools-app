@@ -370,7 +370,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-/*
+  /*
   Widget buildDashboardCards(bool isDark) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -497,10 +497,10 @@ class _DashboardPageState extends State<DashboardPage> {
             runSpacing: 8,
             alignment: WrapAlignment.center,
             children: [
-              _LegendItem('On-hand Tools', Colors.green, toolsOnhandCount),
-              _LegendItem('Defective Tools', Colors.red, toolsDefectiveCount),
-              _LegendItem('Technicians', Colors.orange, technicianCount),
-              _LegendItem('Total Tools', Colors.grey, totalToolsCount),
+              _LegendItem('On-hand Tools', Colors.green),
+              _LegendItem('Defective Tools', Colors.red),
+              _LegendItem('Technicians', Colors.orange),
+              _LegendItem('Total Tools', Colors.grey),
             ],
           ),
         ],
@@ -688,9 +688,13 @@ class _ChartBadge extends StatelessWidget {
 class _LegendItem extends StatelessWidget {
   final String label;
   final Color color;
-  final int count;
+  //final int count;
 
-  const _LegendItem(this.label, this.color, this.count);
+  const _LegendItem(
+    this.label,
+    this.color,
+    // this.count
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -712,6 +716,7 @@ class _LegendItem extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
+        /*
         Text(
           '$count',
           style: TextStyle(
@@ -720,6 +725,7 @@ class _LegendItem extends StatelessWidget {
             color: color,
           ),
         ),
+        */
       ],
     );
   }

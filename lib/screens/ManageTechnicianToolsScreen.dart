@@ -1,14 +1,12 @@
-// ignore_for_file: file_names
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-//import 'dart:io';
-//import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
-
   const ManageTechnicianToolsScreen({super.key, this.technician});
 
   @override
@@ -19,26 +17,15 @@ class ManageTechnicianToolsScreen extends StatefulWidget {
 class _ManageTechnicianToolsScreenState
     extends State<ManageTechnicianToolsScreen> {
   final _supabase = Supabase.instance.client;
+  final ImagePicker _picker = ImagePicker();
 
-  String? _scannedCode;
-  //MobileScannerController? _scannerController;
-
+  File? _imageFile;
   List<Map<String, dynamic>> _tools = [];
   bool _loading = true;
   bool _saving = false;
   bool _hasChanges = false;
 
-  final ImagePicker _picker = ImagePicker();
-
-  // Track which categories are expanded
-  final Map<String, bool> _expandedCategories = {
-    /*
-    'PPE': false,
-    'GPON Tools': false,
-    'Common Tools': false,
-    'Additional Tools': false,
-    */
-  };
+  final Map<String, bool> _expandedCategories = {};
 
   @override
   void initState() {
@@ -57,18 +44,15 @@ class _ManageTechnicianToolsScreenState
     }
 
     try {
-      // Fetch all available tools
       final allTools = await _supabase
           .from('tools')
           .select('tools_id, name, category');
 
-      // Fetch only the technician's assigned tools with their status
       final assignedTools = await _supabase
           .from('technician_tools')
           .select('tools_id, status')
           .eq('technician_id', technicianId);
 
-      // Combine both lists
       final combined = allTools.map<Map<String, dynamic>>((tool) {
         final match = assignedTools.firstWhere(
           (a) => a['tools_id'] == tool['tools_id'],
@@ -88,7 +72,6 @@ class _ManageTechnicianToolsScreenState
         _tools = combined;
         _hasChanges = false;
 
-        // dynamic categories - default collapsed
         final categories = combined.map((t) => t['category'] as String).toSet();
         _expandedCategories.clear();
         for (var c in categories) {
@@ -109,14 +92,12 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  /// Save all changes to the database
   Future<void> _saveChanges() async {
     final technicianId = widget.technician?['id'];
     if (technicianId == null || _saving) return;
     setState(() => _saving = true);
 
     try {
-      // Find tools where the status was changed
       final changedTools = _tools.where((tool) {
         return tool['status'] != tool['original_status'];
       }).toList();
@@ -133,7 +114,6 @@ class _ManageTechnicianToolsScreenState
         return;
       }
 
-      // Prepare updated data for Supabase
       final updates = changedTools.map((tool) {
         return {
           'technician_id': technicianId,
@@ -145,7 +125,6 @@ class _ManageTechnicianToolsScreenState
 
       await _supabase.from('technician_tools').upsert(updates);
 
-      // Update local copies
       for (var tool in _tools) {
         tool['original_status'] = tool['status'];
       }
@@ -178,7 +157,6 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  /// Check if there are unsaved changes
   void _checkForChanges() {
     final hasChanges = _tools.any((tool) {
       return tool['status'] != tool['original_status'];
@@ -189,7 +167,6 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  /// Get category icon
   IconData _getCategoryIcon(String category) {
     switch (category) {
       case 'PPE':
@@ -205,65 +182,70 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  /// Open camera to capture image
-  Future<void> _openCamera() async {
-    try {
-      final pickedFile = await _picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
+  Future<void> _takePicture() async {
+    final pickedFile = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 80,
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo captured successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
       );
-
-      if (pickedFile != null) {
-        setState(() {});
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Photo captured successfully!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Error capturing image: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error capturing photo: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
-  /// Build tools by category with dropdown
+  Future<void> _sharePhoto() async {
+    if (_imageFile == null) return;
+
+    try {
+      await Share.shareXFiles(
+        [XFile(_imageFile!.path)],
+        text: 'Technician Tools Photo',
+      );
+    } catch (e) {
+      debugPrint('❌ Error sharing photo: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error sharing photo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _buildCategoryTools(String category) {
     final filteredTools =
-        _tools.where((tool) => tool['category'] == category).toList()..sort(
-          (a, b) => (a['name'] as String).toLowerCase().compareTo(
-            (b['name'] as String).toLowerCase(),
-          ),
-        );
+        _tools.where((tool) => tool['category'] == category).toList()
+          ..sort(
+            (a, b) => (a['name'] as String).toLowerCase().compareTo(
+                  (b['name'] as String).toLowerCase(),
+                ),
+          );
 
     if (filteredTools.isEmpty) {
       return const SizedBox.shrink();
     }
 
     final isExpanded = _expandedCategories[category] ?? false;
-    //final toolCount = filteredTools.length;
-    //final okCount = filteredTools.where((t) => t['status'] == 'OK').length;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
       elevation: 2,
       child: Column(
         children: [
-          // Dropdown header
           InkWell(
             onTap: () {
               setState(() {
@@ -290,18 +272,13 @@ class _ManageTechnicianToolsScreenState
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          category,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      category,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                   Icon(
@@ -314,7 +291,6 @@ class _ManageTechnicianToolsScreenState
             ),
           ),
           if (isExpanded) ...[
-            // Column Headers
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -375,8 +351,6 @@ class _ManageTechnicianToolsScreenState
                 ],
               ),
             ),
-
-            // Tool rows
             ...filteredTools.map((tool) {
               final currentStatus = tool['status'] ?? 'None';
               final hasChanged = tool['status'] != tool['original_status'];
@@ -394,7 +368,6 @@ class _ManageTechnicianToolsScreenState
                 ),
                 child: Row(
                   children: [
-                    // Tool name
                     Expanded(
                       flex: 3,
                       child: Text(
@@ -408,19 +381,14 @@ class _ManageTechnicianToolsScreenState
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          // Onhand
                           Checkbox(
                             value: tool['status'] == 'Onhand',
                             onChanged: _saving
                                 ? null
                                 : (value) {
                                     setState(() {
-                                      tool['status'] = value == true
-                                          ? 'Onhand'
-                                          : 'None';
-                                      print(
-                                        "Tool ${tool['tools_id']} set to ${tool['status']}",
-                                      );
+                                      tool['status'] =
+                                          value == true ? 'Onhand' : 'None';
                                     });
                                     _checkForChanges();
                                   },
@@ -428,8 +396,6 @@ class _ManageTechnicianToolsScreenState
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
                           ),
-
-                          // None
                           Checkbox(
                             value: currentStatus == 'None',
                             onChanged: _saving
@@ -446,8 +412,6 @@ class _ManageTechnicianToolsScreenState
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
                           ),
-
-                          // Missing
                           Checkbox(
                             value: currentStatus == 'Missing',
                             onChanged: _saving
@@ -464,8 +428,6 @@ class _ManageTechnicianToolsScreenState
                             materialTapTargetSize:
                                 MaterialTapTargetSize.shrinkWrap,
                           ),
-
-                          // Defective
                           Checkbox(
                             value: currentStatus == 'Defective',
                             onChanged: _saving
@@ -495,7 +457,6 @@ class _ManageTechnicianToolsScreenState
     );
   }
 
-  /// Build the list of tools organized by category
   Widget _buildToolsList() {
     if (_tools.isEmpty) {
       return const Center(child: Text('No tools found'));
@@ -504,76 +465,6 @@ class _ManageTechnicianToolsScreenState
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        /*
-        // Scanner Section
-        Card(
-          elevation: 3,
-          margin: const EdgeInsets.only(bottom: 20),
-          child: InkWell(
-            onTap: _showScanner,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(255, 0, 62, 112),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-
-                    child: const Icon(
-                      Icons.qr_code_scanner,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Scan QR Code',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _scannedCode != null
-                              ? 'Last scan: $_scannedCode'
-                              : 'Tap to scan',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _scannedCode != null
-                                ? Colors.green
-                                : Colors.grey.shade600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  Icon(
-                    _scannedCode != null
-                        ? Icons.check_circle
-                        : Icons.arrow_forward_ios,
-                    color: _scannedCode != null
-                        ? Colors.green
-                        : Colors.grey.shade400,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        */
-        // Tools Onhand Header
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -606,139 +497,78 @@ class _ManageTechnicianToolsScreenState
         _buildCategoryTools('GPON Tools'),
         _buildCategoryTools('Common Tools'),
         _buildCategoryTools('Additional Tools'),
-        const SizedBox(height: 80), // Space for FAB
+        const SizedBox(height: 24),
+        if (_imageFile != null) _buildCapturedPhoto(),
+        const SizedBox(height: 80),
       ],
     );
   }
 
-  /// Show QR/Barcode scanner
-  Future<void> _showScanner() async {
-    /*
-    final scannerController = MobileScannerController();
-    bool scanned = false;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.8,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
+  Widget _buildCapturedPhoto() {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color.fromARGB(255, 0, 62, 112),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(4),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.photo_camera,
+                  color: Colors.white,
+                  size: 24,
                 ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Captured Photo',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share, color: Colors.white, size: 20),
+                  onPressed: _sharePhoto,
+                  tooltip: 'Share/Download Photo',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  onPressed: () {
+                    setState(() {
+                      _imageFile = null;
+                    });
+                  },
+                  tooltip: 'Remove Photo',
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                _imageFile!,
+                width: double.infinity,
+                fit: BoxFit.cover,
               ),
-              child: Column(
-                children: [
-                  // Header
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: const BoxDecoration(
-                      color: Color.fromARGB(255, 0, 62, 112),
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.qr_code_scanner, color: Colors.white),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Scan QR Code',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
-                          onPressed: () async {
-                            // 👇 Stop camera before closing
-                            await scannerController.stop();
-                            await scannerController.dispose();
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Scanner View
-                  Expanded(
-                    child: MobileScanner(
-                      controller: scannerController,
-                      onDetect: (capture) async {
-                        if (scanned) return;
-                        scanned = true;
-
-                        for (final barcode in capture.barcodes) {
-                          final code = barcode.rawValue;
-                          if (code != null) {
-                            setState(() => _scannedCode = code);
-
-                            // 👇 Stop the scanner before closing modal
-                            await scannerController.stop();
-                            await scannerController.dispose();
-
-                            Navigator.pop(context);
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Scanned: $code'),
-                                backgroundColor: Colors.green,
-                                duration: const Duration(seconds: 3),
-                              ),
-                            );
-                            break;
-                          }
-                        }
-                      },
-                    ),
-                  ),
-
-                  // Instructions
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.qr_code_2,
-                          size: 48,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Position the QR code or barcode within the frame',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+            ),
+          ),
+        ],
+      ),
     );
-
-    // Just in case user swipes down to close the sheet
-    await scannerController.stop();
-    await scannerController.dispose();
-    */
   }
 
   @override
@@ -746,15 +576,26 @@ class _ManageTechnicianToolsScreenState
     final technicianName = widget.technician?['name'] ?? 'Technician';
 
     return Scaffold(
-      appBar: AppBar(title: Text("$technicianName's Tools")),
+      appBar: AppBar(title: Text("$technicianName's tools")),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _fetchTechnicianTools,
               child: _buildToolsList(),
             ),
-      floatingActionButton: _hasChanges
-          ? FloatingActionButton.extended(
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'camera',
+            onPressed: _takePicture,
+            backgroundColor: const Color(0xFF003E70),
+            child: const Icon(Icons.camera_alt, color: Colors.white),
+          ),
+          if (_hasChanges) ...[
+            const SizedBox(height: 16),
+            FloatingActionButton.extended(
+              heroTag: 'save',
               onPressed: _saving ? null : _saveChanges,
               icon: _saving
                   ? const SizedBox(
@@ -768,11 +609,14 @@ class _ManageTechnicianToolsScreenState
                   : const Icon(Icons.save, color: Colors.white),
               label: Text(
                 _saving ? 'Saving...' : 'Save Changes',
-                style: TextStyle(color: Colors.white),
+                style: const TextStyle(color: Colors.white),
               ),
               backgroundColor: const Color(0xFF003E70),
-            )
-          : null,
+            ),
+          ],
+        ],
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
