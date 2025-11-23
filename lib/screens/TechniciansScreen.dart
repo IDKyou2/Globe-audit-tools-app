@@ -50,10 +50,15 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
     super.didChangeDependencies();
   }
 
-  void _showSnack(String message, {Color color = const Color(0xFF003E70)}) {
+  //Snackbar function
+  void _showSnack(
+    String message, {
+    Color color = const Color(0xFF003E70),
+    Color textColor = Colors.white,
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: const TextStyle(color: Colors.white)),
+        content: Text(message, style: TextStyle(color: textColor)),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
       ),
@@ -111,7 +116,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
     final List<String> clusters = ['Davao North', 'Davao South'];
     String? selectedCluster;
     final TextEditingController nameController = TextEditingController();
-    String? inlineError;
+    String? inlineError, clusterError;
     bool isDialogLoading = false;
 
     showDialog(
@@ -125,6 +130,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Name input
                   TextField(
                     controller: nameController,
                     enabled: !isDialogLoading,
@@ -135,6 +141,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  // Cluster input
                   DropdownButtonFormField<String>(
                     value: selectedCluster,
                     hint: const Text('Choose cluster *'),
@@ -143,6 +150,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
+                      errorText: clusterError,
                     ),
                     items: clusters.map((cluster) {
                       return DropdownMenuItem<String>(
@@ -183,6 +191,9 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                           if (name.isEmpty || selectedCluster == null) {
                             setDialogState(() {
                               inlineError = 'Please fill all required fields.';
+                              clusterError = selectedCluster == null
+                                  ? 'Please select a cluster.'
+                                  : null;
                             });
                             return;
                           }
@@ -225,7 +236,14 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
 
                             await fetchTechnicians();
 
-                            if (mounted) Navigator.pop(dialogContext);
+                            if (mounted) {
+                              _showSnack(
+                                'Technician added successfully',
+                                color: Colors.green,
+                                //textColor: Colors.black,
+                              );
+                              Navigator.pop(dialogContext);
+                            }
                           } catch (e) {
                             setDialogState(() {
                               inlineError = 'Error adding technician: $e';
@@ -302,7 +320,9 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
       });
 
       // Close the dialog
-      if (mounted) Navigator.pop(dialogContext);
+      if (mounted) {
+        Navigator.pop(dialogContext);
+      }
 
       // Refresh the list
       await fetchTechnicians();
@@ -310,91 +330,6 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
       setInlineError('Error adding technician: $e');
     } finally {
       if (mounted) setState(() => isAdding = false);
-    }
-  }
-
-  Future<void> addQuery({
-    required String name,
-    required String? cluster,
-    required BuildContext dialogContext,
-  }) async {
-    if (isAdding) return;
-
-    if (name.isEmpty || cluster == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please fill all required fields.',
-            style: TextStyle(color: Colors.black),
-          ),
-          backgroundColor: Color.fromARGB(255, 255, 193, 7),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-
-    setState(() => isAdding = true);
-
-    try {
-      final supabase = Supabase.instance.client;
-
-      // ✅ Check for duplicates
-      final existing = await supabase
-          .from('technicians')
-          .select('id')
-          .eq('name', name)
-          .maybeSingle();
-
-      if (existing != null) {
-        setState(() => isAdding = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Technician "$name" already exists.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
-
-      final now = DateTime.now();
-      final formattedDate = DateFormat('MM/dd/yyyy, h:mm a').format(now);
-
-      await supabase.from('technicians').insert({
-        'name': name,
-        'cluster': cluster,
-        'created_at': formattedDate,
-      });
-
-      await fetchTechnicians();
-
-      if (mounted) {
-        Navigator.pop(dialogContext);
-        _nameController.clear();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Technician "$name" added successfully!'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error adding technician: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => isAdding = false);
-      }
     }
   }
 
@@ -519,14 +454,11 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
 
                           if (mounted) {
                             Navigator.pop(dialogContext);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Technician updated successfully!',
-                                ),
-                                backgroundColor: Color(0xFF003E70),
-                                behavior: SnackBarBehavior.floating,
-                              ),
+
+                            _showSnack(
+                              'Technician updated successfully!',
+                              //color: const Color.fromARGB(255, 255, 193, 7),
+                              //textColor: Colors.black,
                             );
                           }
                         } catch (e) {
@@ -591,22 +523,14 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
       await fetchTechnicians();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Technician updated successfully!'),
-            backgroundColor: Color(0xFF003E70),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showSnack('Technician updated successfully');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error updating technician: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
+        _showSnack(
+          'Error updating technician: $e',
+          color: Colors.red,
+          //textColor: Colors.black,
         );
       }
     } finally {
@@ -643,22 +567,18 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                 await fetchTechnicians();
 
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Technician deleted successfully!'),
-                      backgroundColor: Colors.green,
-                      //backgroundColor: Color(0xFF003E70),
-                      behavior: SnackBarBehavior.floating,
-                    ),
+                  _showSnack(
+                    'Technician deleted successfully',
+                    //color: Colors.black,
+                    textColor: Colors.red,
                   );
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error deleting technician: $e'),
-                      backgroundColor: Colors.red,
-                    ),
+                  _showSnack(
+                    'Error deleting technician: $e',
+                    color: Colors.red,
+                    //textColor: Colors.black,
                   );
                 }
               }
