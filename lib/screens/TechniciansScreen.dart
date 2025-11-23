@@ -50,6 +50,16 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
     super.didChangeDependencies();
   }
 
+  void _showSnack(String message, {Color color = const Color(0xFF003E70)}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(color: Colors.white)),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> fetchTechnicians() async {
     final supabase = Supabase.instance.client;
 
@@ -61,7 +71,6 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
           .select()
           .order('created_at', ascending: false) // SECOND priority
           .order('last_checked_at', ascending: false); // FIRST priority
-
       //.order('created_at', ascending: false); // Newest first
 
       if (mounted) {
@@ -101,78 +110,135 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
   void showAddTechnicianDialog() {
     final List<String> clusters = ['Davao North', 'Davao South'];
     String? selectedCluster;
+    final TextEditingController nameController = TextEditingController();
+    String? inlineError;
+    bool isDialogLoading = false;
 
     showDialog(
       context: context,
-      builder: (context) {
+      barrierDismissible: false,
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setStateDialog) {
+          builder: (context, setDialogState) {
             return AlertDialog(
               title: const Text('Add Technician'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _nameController,
-                      enabled: !isAdding, // ✅ Disable during operation
-                      decoration: const InputDecoration(
-                        labelText: 'Full Name',
-                        border: OutlineInputBorder(),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    enabled: !isDialogLoading,
+                    decoration: InputDecoration(
+                      labelText: 'Full Name *',
+                      border: const OutlineInputBorder(),
+                      errorText: inlineError, // show inline error
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedCluster,
+                    hint: const Text('Choose cluster *'),
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: selectedCluster,
-                      hint: const Text('Choose cluster'),
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      items: clusters.map((cluster) {
-                        return DropdownMenuItem<String>(
-                          value: cluster,
-                          child: Text(cluster),
-                        );
-                      }).toList(),
-                      onChanged:
-                          isAdding // ✅ Disable during operation
-                          ? null
-                          : (newValue) {
-                              setStateDialog(() => selectedCluster = newValue);
-                            },
-                    ),
-                  ],
-                ),
+                    items: clusters.map((cluster) {
+                      return DropdownMenuItem<String>(
+                        value: cluster,
+                        child: Text(cluster),
+                      );
+                    }).toList(),
+                    onChanged: isDialogLoading
+                        ? null
+                        : (newValue) {
+                            setDialogState(() => selectedCluster = newValue);
+                          },
+                  ),
+                ],
               ),
               actions: [
                 TextButton(
-                  onPressed: isAdding
+                  onPressed: isDialogLoading
                       ? null
-                      : () => Navigator.pop(
-                          context,
-                        ), // ✅ Disable during operation
+                      : () {
+                          nameController.dispose();
+                          Navigator.pop(dialogContext);
+                        },
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF003E70),
                   ),
-                  onPressed:
-                      isAdding // ✅ Disable when adding
+                  onPressed: isDialogLoading
                       ? null
                       : () async {
-                          //Navigator.pop(context);
-                          await addQuery(
-                            name: _nameController.text.trim(),
-                            cluster: selectedCluster,
-                            dialogContext: context,
-                          );
+                          final name = nameController.text.trim();
+
+                          setDialogState(() => inlineError = null);
+
+                          // Inline validation
+                          if (name.isEmpty || selectedCluster == null) {
+                            setDialogState(() {
+                              inlineError = 'Please fill all required fields.';
+                            });
+                            return;
+                          }
+
+                          // Disable while adding
+                          setState(() => isAdding = true);
+                          setDialogState(() => isDialogLoading = true);
+
+                          try {
+                            final supabase = Supabase.instance.client;
+
+                            // Case-insensitive duplicate check
+                            final existing = await supabase
+                                .from('technicians')
+                                .select('id')
+                                .ilike('name', name)
+                                .maybeSingle();
+
+                            if (existing != null) {
+                              setDialogState(() {
+                                inlineError =
+                                    'Technician "$name" already exists.';
+                                isDialogLoading = false;
+                              });
+                              setState(() => isAdding = false);
+                              return;
+                            }
+
+                            // Insert technician
+                            final now = DateTime.now();
+                            final formattedDate = DateFormat(
+                              'MM/dd/yyyy, h:mm a',
+                            ).format(now);
+
+                            await supabase.from('technicians').insert({
+                              'name': name,
+                              'cluster': selectedCluster,
+                              'created_at': formattedDate,
+                            });
+
+                            await fetchTechnicians();
+
+                            if (mounted) Navigator.pop(dialogContext);
+                          } catch (e) {
+                            setDialogState(() {
+                              inlineError = 'Error adding technician: $e';
+                              isDialogLoading = false;
+                            });
+                          } finally {
+                            if (mounted) {
+                              setState(() => isAdding = false);
+                              setDialogState(() => isDialogLoading = false);
+                            }
+                          }
                         },
-                  child:
-                      isAdding // ✅ Show loading indicator
+                  child: isDialogLoading
                       ? const SizedBox(
                           width: 20,
                           height: 20,
@@ -192,6 +258,59 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
         );
       },
     );
+  }
+
+  // Separate function for adding technician
+  Future<void> _addTechnician(
+    BuildContext dialogContext,
+    String name,
+    String? cluster,
+    StateSetter setDialogState,
+    void Function(String?) setInlineError, // callback to update inlineError
+  ) async {
+    // Inline validation for empty fields
+    if (name.isEmpty || cluster == null) {
+      setInlineError('Please fill all required fields.');
+      return;
+    }
+
+    setState(() => isAdding = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+
+      // Check for duplicates (case-insensitive)
+      final exists = await supabase
+          .from('technicians')
+          .select('id')
+          .ilike('name', name)
+          .maybeSingle();
+
+      if (exists != null) {
+        setInlineError('Technician "$name" already exists.');
+        return;
+      }
+
+      // Insert technician
+      final now = DateTime.now();
+      final formattedDate = DateFormat('MM/dd/yyyy, h:mm a').format(now);
+
+      await supabase.from('technicians').insert({
+        'name': name,
+        'cluster': cluster,
+        'created_at': formattedDate,
+      });
+
+      // Close the dialog
+      if (mounted) Navigator.pop(dialogContext);
+
+      // Refresh the list
+      await fetchTechnicians();
+    } catch (e) {
+      setInlineError('Error adding technician: $e');
+    } finally {
+      if (mounted) setState(() => isAdding = false);
+    }
   }
 
   Future<void> addQuery({
@@ -220,6 +339,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
     try {
       final supabase = Supabase.instance.client;
 
+      // ✅ Check for duplicates
       final existing = await supabase
           .from('technicians')
           .select('id')
@@ -227,41 +347,39 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
           .maybeSingle();
 
       if (existing != null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Technician "$name" already exists.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        setState(() => isAdding = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Technician "$name" already exists.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         return;
       }
 
-      // ✅ Format created_at to match last_checked_at format
       final now = DateTime.now();
       final formattedDate = DateFormat('MM/dd/yyyy, h:mm a').format(now);
 
       await supabase.from('technicians').insert({
         'name': name,
         'cluster': cluster,
-        'created_at':
-            formattedDate, // ✅ Use formatted string instead of ISO8601
+        'created_at': formattedDate,
       });
 
       await fetchTechnicians();
 
       if (mounted) {
         Navigator.pop(dialogContext);
+        _nameController.clear();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Technician $name added successfully!'),
+            content: Text('Technician "$name" added successfully!'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF003E70),
+            backgroundColor: Colors.green,
           ),
         );
-        _nameController.clear();
       }
     } catch (e) {
       if (mounted) {
@@ -269,6 +387,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
           SnackBar(
             content: Text('Error adding technician: $e'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -284,97 +403,154 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
       text: technician['name'],
     );
     String? editSelectedCluster = technician['cluster'];
+    String? inlineError;
+    bool isDialogLoading = false;
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Edit Technician'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameController,
-                    enabled: !isUpdating, // Disable during operation
-                    decoration: const InputDecoration(
-                      labelText: 'Technician Name',
-                      border: OutlineInputBorder(),
-                    ),
+          builder: (_, setDialogState) => AlertDialog(
+            title: const Text('Edit Technician'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  enabled: !isDialogLoading,
+                  decoration: InputDecoration(
+                    labelText: 'Technician Name',
+                    border: const OutlineInputBorder(),
+                    errorText: inlineError, // show inline error here too
                   ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    value: editSelectedCluster,
-                    decoration: const InputDecoration(
-                      labelText: 'Cluster *',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'Davao North',
-                        child: Text('Davao North'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Davao South',
-                        child: Text('Davao South'),
-                      ),
-                    ],
-                    onChanged:
-                        isUpdating // ✅ Disable during operation
-                        ? null
-                        : (value) {
-                            setDialogState(() {
-                              editSelectedCluster = value;
-                            });
-                          },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed:
-                      isUpdating // ✅ Disable during operation
-                      ? null
-                      : () {
-                          nameController.dispose();
-                          Navigator.pop(dialogContext);
-                        },
-                  child: const Text('Cancel'),
                 ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF003E70),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: editSelectedCluster,
+                  decoration: const InputDecoration(
+                    labelText: 'Cluster *',
+                    border: OutlineInputBorder(),
                   ),
-                  onPressed:
-                      isUpdating // ✅ Disable when updating
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'Davao North',
+                      child: Text('Davao North'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Davao South',
+                      child: Text('Davao South'),
+                    ),
+                  ],
+                  onChanged: isDialogLoading
                       ? null
-                      : () async {
-                          await updateQuery(
-                            technician: technician,
-                            nameController: nameController,
-                            selectedCluster: editSelectedCluster,
-                            dialogContext: dialogContext,
-                          );
-                        },
-                  child:
-                      isUpdating //
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          'Save',
-                          style: TextStyle(color: Colors.white),
-                        ),
+                      : (value) =>
+                            setDialogState(() => editSelectedCluster = value),
                 ),
               ],
-            );
-          },
+            ),
+            actions: [
+              TextButton(
+                onPressed: isDialogLoading
+                    ? null
+                    : () {
+                        nameController.dispose();
+                        Navigator.pop(dialogContext);
+                      },
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF003E70),
+                ),
+                onPressed: isDialogLoading
+                    ? null
+                    : () async {
+                        final newName = nameController.text.trim();
+                        final newCluster = editSelectedCluster;
+
+                        setDialogState(() {
+                          inlineError = null;
+                          isDialogLoading = true;
+                        });
+
+                        // Check empty fields
+                        if (newName.isEmpty || newCluster == null) {
+                          setDialogState(() {
+                            inlineError = 'Please fill all required fields.';
+                            isDialogLoading = false;
+                          });
+                          return;
+                        }
+
+                        // Check if nothing changed
+                        if (newName == technician['name'] &&
+                            newCluster == technician['cluster']) {
+                          Navigator.pop(dialogContext); // Close immediately
+                          return;
+                        }
+
+                        try {
+                          final supabase = Supabase.instance.client;
+
+                          // Check if new name already exists (case-insensitive)
+                          final existing = await supabase
+                              .from('technicians')
+                              .select('id')
+                              .ilike('name', newName) // case-insensitive
+                              .neq('id', technician['id'])
+                              .maybeSingle();
+
+                          if (existing != null) {
+                            setDialogState(() {
+                              inlineError = 'Technician already exists.';
+                              isDialogLoading = false;
+                            });
+                            return;
+                          }
+
+                          // Proceed with update
+                          await supabase
+                              .from('technicians')
+                              .update({'name': newName, 'cluster': newCluster})
+                              .eq('id', technician['id']);
+
+                          await fetchTechnicians();
+
+                          if (mounted) {
+                            Navigator.pop(dialogContext);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Technician updated successfully!',
+                                ),
+                                backgroundColor: Color(0xFF003E70),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            setDialogState(() {
+                              inlineError = 'Error updating technician: $e';
+                              isDialogLoading = false;
+                            });
+                          }
+                        }
+                      },
+                child: isDialogLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Save', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -470,7 +646,8 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Technician deleted successfully!'),
-                      backgroundColor: Color(0xFF003E70),
+                      backgroundColor: Colors.green,
+                      //backgroundColor: Color(0xFF003E70),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
@@ -760,7 +937,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                                     elevation: 0,
                                   ),
                                   child: Text(
-                                    'Tools',
+                                    'Check Tools',
                                     style: TextStyle(
                                       color: isDarkMode
                                           ? Colors.white

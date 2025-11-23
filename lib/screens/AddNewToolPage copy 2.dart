@@ -80,141 +80,18 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     }
   }
 
-  Future<void> _showAddDialog() async {
-    _toolNameController.clear();
-    _selectedCategory = null;
+  Future<void> _addTool(BuildContext dialogContext) async {
+    final name = _toolNameController.text.trim();
+    final category = _selectedCategory;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        bool isDialogLoading = false;
-        String? errorMessage; // INLINE ERROR MESSAGE
+    if (name.isEmpty || category == null) {
+      _showSnack('Please fill all required fields.', color: Colors.orange);
+      return;
+    }
 
-        return StatefulBuilder(
-          builder: (_, setStateDialog) => AlertDialog(
-            title: const Text('Add Tool'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _toolNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tool Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
+    setState(() => _isLoading = true);
 
-                const SizedBox(height: 16),
-
-                DropdownButtonFormField<String>(
-                  value: _selectedCategory,
-                  decoration: const InputDecoration(
-                    labelText: 'Tool Category *',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _categories
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setStateDialog(() => _selectedCategory = v),
-                ),
-
-                const SizedBox(height: 10),
-
-                // === INLINE VALIDATION MESSAGE ===
-                if (errorMessage != null)
-                  Text(
-                    errorMessage!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-
-              isDialogLoading
-                  ? const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(),
-                    )
-                  : ElevatedButton.icon(
-                      onPressed: () async {
-                        final name = _toolNameController.text.trim();
-                        final category = _selectedCategory;
-
-                        // ========== VALIDATION ==========
-                        if (name.isEmpty || category == null) {
-                          setStateDialog(
-                            () => errorMessage =
-                                'Please fill all required fields.',
-                          );
-                          return;
-                        }
-
-                        setStateDialog(() {
-                          isDialogLoading = true;
-                          errorMessage = null;
-                        });
-
-                        try {
-                          // CHECK IF TOOL NAME EXISTS
-                          final exists = await Supabase.instance.client
-                              .from('tools')
-                              .select('tools_id')
-                              .ilike('name', name)
-                              .maybeSingle();
-
-                          if (exists != null) {
-                            setStateDialog(() {
-                              isDialogLoading = false;
-                              errorMessage =
-                                  'Tool name already exists. Try another one.';
-                            });
-                            return;
-                          }
-
-                          // INSERT TOOL
-                          await Supabase.instance.client.from('tools').insert({
-                            'name': name,
-                            'category': category,
-                          });
-
-                          Navigator.pop(dialogContext); // close dialog
-                          await _fetchTools();
-                          _showSnack('Tool added successfully!');
-                        } catch (e) {
-                          setStateDialog(() {
-                            isDialogLoading = false;
-                            errorMessage = 'Error: $e';
-                          });
-                        }
-                      },
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      label: const Text(
-                        'Add',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF003E70),
-                      ),
-                    ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<bool> addToolQuery({
-    required String name,
-    required String category,
-  }) async {
     try {
-      // Check if tool exists
       final exists = await Supabase.instance.client
           .from('tools')
           .select('tools_id')
@@ -222,60 +99,81 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
           .maybeSingle();
 
       if (exists != null) {
-        return false; // Tool already exists
+        _showSnack('Tool name already exists!', color: Colors.red);
+        _toolNameController.clear();
+
+        setState(() => _selectedCategory = null);
+
+        if (mounted) Navigator.pop(dialogContext); // Close the dialog
+        return;
       }
 
-      // Insert new tool
       await Supabase.instance.client.from('tools').insert({
         'name': name,
         'category': category,
       });
 
-      return true; // Successfully added
+      _showSnack('Tool added successfully!');
+      _toolNameController.clear();
+      setState(() => _selectedCategory = null);
+
+      // Close the dialog
+      if (mounted) Navigator.pop(dialogContext);
+
+      await _fetchTools();
     } catch (e) {
       debugPrint('❌ Error adding tool: $e');
-      rethrow;
+      _showSnack('Error adding tool: $e', color: Colors.red);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   // Function to update tool
-  /// Returns:
-  /// 'success' → OK
-  /// 'exists' → name already exists
-  /// 'error: ...' → error message
-  Future<String> _updateTool(
+  Future<void> _updateTool(
     Map<String, dynamic> tool,
     String updatedName,
     String updatedCategory,
+    BuildContext dialogContext,
   ) async {
+    if (updatedName.isEmpty) {
+      _showSnack('Please fill all required fields.', color: Colors.orange);
+      return;
+    }
+
     try {
-      if (updatedName.isEmpty) return "empty";
+      // Store navigator reference before async call
+      final navigator = Navigator.of(dialogContext, rootNavigator: true);
 
-      // NO CHANGES
-      final oldName = tool['name'];
-      final oldCategory = tool['category'];
-      if (updatedName == oldName && updatedCategory == oldCategory) {
-        return "nochange";
-      }
-
-      // DUPLICATE NAME
+      // Check if another tool already has the same name
       final existing = await Supabase.instance.client
           .from('tools')
           .select()
           .eq('name', updatedName)
-          .neq('tools_id', tool['tools_id']);
+          .neq('tools_id', tool['tools_id']); // exclude current tool
 
-      if (existing.isNotEmpty) return "exists";
+      if (existing.isNotEmpty) {
+        if (mounted) {
+          navigator.pop(); // close the dialog automatically
+          _showSnack('Tool name already exists!', color: Colors.red);
+        }
+        return;
+      }
 
-      // UPDATE
+      // Proceed with update
       await Supabase.instance.client
           .from('tools')
           .update({'name': updatedName, 'category': updatedCategory})
           .eq('tools_id', tool['tools_id']);
 
-      return "success";
+      if (mounted) {
+        navigator.pop(); // close dialog after successful update
+        _showSnack('Tool updated successfully!');
+      }
+
+      await _fetchTools();
     } catch (e) {
-      return "error: $e";
+      if (mounted) _showSnack('Error updating tool: $e', color: Colors.red);
     }
   }
 
@@ -292,123 +190,127 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     }
   }
 
-  Future<void> _showUpdateDialog(Map<String, dynamic> tool) async {
-    final TextEditingController nameController = TextEditingController(
-      text: tool['name'],
-    );
-    String? selectedCategory = tool['category'];
-    String? inlineError;
-    bool isDialogLoading = false;
-
+  Future<void> _showAddDialog() async {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (_, setStateDialog) => AlertDialog(
-            title: const Text('Update Tool'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tool Name',
-                    border: OutlineInputBorder(),
-                  ),
+        return AlertDialog(
+          title: const Text('Add Tool'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _toolNameController,
+                enabled: !_isLoading,
+                decoration: const InputDecoration(
+                  labelText: 'Tool Name *',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: selectedCategory,
-                  decoration: const InputDecoration(
-                    labelText: 'Category',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _categories
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setStateDialog(() => selectedCategory = v),
-                ),
-                const SizedBox(height: 10),
-                if (inlineError != null)
-                  Text(inlineError!, style: const TextStyle(color: Colors.red)),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
               ),
-              isDialogLoading
-                  ? const SizedBox(
-                      height: 28,
-                      width: 28,
-                      child: CircularProgressIndicator(),
-                    )
-                  : ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF003E70),
-                      ),
-                      onPressed: () async {
-                        final newName = nameController.text.trim();
-                        final newCategory = selectedCategory ?? "";
-
-                        setStateDialog(() {
-                          inlineError = null;
-                          isDialogLoading = true;
-                        });
-
-                        final result = await _updateTool(
-                          tool,
-                          newName,
-                          newCategory,
-                        );
-
-                        if (!mounted) return;
-
-                        if (result == "empty") {
-                          setStateDialog(() {
-                            inlineError = "Please enter a tool name.";
-                            isDialogLoading = false;
-                          });
-                          return;
-                        }
-
-                        if (result == "exists") {
-                          setStateDialog(() {
-                            inlineError = "Tool name already exists!";
-                            isDialogLoading = false;
-                          });
-                          return;
-                        }
-
-                        if (result == "nochange") {
-                          Navigator.pop(dialogContext); // CLOSE DIALOG
-                          return;
-                        }
-
-                        if (result.startsWith("error:")) {
-                          setStateDialog(() {
-                            inlineError = result;
-                            isDialogLoading = false;
-                          });
-                          return;
-                        }
-
-                        // SUCCESS → CLOSE DIALOG
-                        Navigator.pop(dialogContext);
-                        _showSnack("Tool updated successfully!");
-                        await _fetchTools();
-                      },
-                      child: const Text(
-                        "Update",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Tool Category *',
+                  border: OutlineInputBorder(),
+                ),
+                items: _categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: _isLoading
+                    ? null
+                    : (v) => setState(() => _selectedCategory = v),
+              ),
             ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            _isLoading
+                ? const SizedBox(
+                    height: 30,
+                    width: 30,
+                    child: CircularProgressIndicator(),
+                  )
+                : ElevatedButton.icon(
+                    onPressed: () =>
+                        _addTool(dialogContext), // <-- pass dialogContext
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      'Add',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF003E70),
+                    ),
+                  ),
+          ],
         );
       },
+    );
+  }
+
+  Future<void> _showEditDialog(Map<String, dynamic> tool) async {
+    final editController = TextEditingController(text: tool['name']);
+    String editCategory = tool['category'];
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setStateDialog) => AlertDialog(
+          title: const Text('Edit Tool'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: editController,
+                decoration: const InputDecoration(
+                  labelText: 'Tool Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: editCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Tool Category',
+                  border: OutlineInputBorder(),
+                ),
+                items: _categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => setStateDialog(() => editCategory = v!),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF003E70),
+              ),
+              onPressed: () async {
+                await _updateTool(
+                  tool,
+                  editController.text.trim(),
+                  editCategory,
+                  dialogContext, // dialog context from builder
+                );
+              },
+              child: const Text(
+                'Update',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -532,7 +434,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             borderRadius: BorderRadius.circular(12),
           ),
           onSelected: (value) {
-            if (value == 'edit') _showUpdateDialog(tool);
+            if (value == 'edit') _showEditDialog(tool);
             if (value == 'delete') _showDeleteDialog(tool['tools_id']);
           },
           itemBuilder: (_) => const [
