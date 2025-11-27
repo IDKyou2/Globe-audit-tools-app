@@ -333,186 +333,191 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
     }
   }
 
-  void showEditTechnicianDialog(Map<String, dynamic> technician) {
-    final TextEditingController nameController = TextEditingController(
-      text: technician['name'],
-    );
-    String? editSelectedCluster = technician['cluster'];
+  void editTechnician(Map<String, dynamic> technician) {
+    final nameController = TextEditingController(text: technician['name']);
+    String? selectedCluster = technician['cluster'];
     String? inlineError;
-    bool isDialogLoading = false;
+    bool isLoading = false;
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (_, setDialogState) => AlertDialog(
-            title: const Text('Edit Technician'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  enabled: !isDialogLoading,
-                  decoration: InputDecoration(
-                    labelText: 'Technician Name',
-                    border: const OutlineInputBorder(),
-                    errorText: inlineError, // show inline error here too
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: editSelectedCluster,
-                  decoration: const InputDecoration(
-                    labelText: 'Cluster *',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Davao North',
-                      child: Text('Davao North'),
+          builder: (context, setDialogState) {
+            // Helper to safely update dialog state
+            void updateState(VoidCallback fn) {
+              if (mounted) setDialogState(fn);
+            }
+
+            Future<void> handleSave() async {
+              final newName = nameController.text.trim();
+
+              // Validation
+              if (newName.isEmpty || selectedCluster == null) {
+                updateState(() {
+                  inlineError = 'Please fill all required fields.';
+                });
+                return;
+              }
+
+              // No changes
+              if (newName == technician['name'] &&
+                  selectedCluster == technician['cluster']) {
+                Navigator.pop(dialogContext);
+                nameController.dispose();
+                return;
+              }
+
+              updateState(() => isLoading = true);
+
+              try {
+                final supabase = Supabase.instance.client;
+
+                // Check duplicate name
+                final existing = await supabase
+                    .from('technicians')
+                    .select('id')
+                    .ilike('name', newName)
+                    .neq('id', technician['id'])
+                    .maybeSingle();
+
+                if (existing != null) {
+                  updateState(() {
+                    inlineError = 'Technician already exists';
+                    isLoading = false;
+                  });
+                  return;
+                }
+
+                // Update technician
+                await supabase
+                    .from('technicians')
+                    .update({'name': newName, 'cluster': selectedCluster})
+                    .eq('id', technician['id']);
+
+                await fetchTechnicians();
+
+                Navigator.pop(dialogContext);
+                nameController.dispose();
+
+                // Show snackbar on main screen
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Technician updated successfully'),
+                      backgroundColor: Colors.green,
+                      behavior: SnackBarBehavior.floating,
                     ),
-                    DropdownMenuItem(
-                      value: 'Davao South',
-                      child: Text('Davao South'),
+                  );
+                }
+              } catch (e) {
+                updateState(() {
+                  inlineError = 'Error updating technician: $e';
+                  isLoading = false;
+                });
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Edit Technician'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    enabled: !isLoading,
+                    decoration: InputDecoration(
+                      labelText: 'Technician Name',
+                      border: const OutlineInputBorder(),
+                      errorText: inlineError,
                     ),
-                  ],
-                  onChanged: isDialogLoading
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: selectedCluster,
+                    decoration: const InputDecoration(
+                      labelText: 'Cluster *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Davao North',
+                        child: Text('Davao North'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Davao South',
+                        child: Text('Davao South'),
+                      ),
+                    ],
+                    onChanged: isLoading
+                        ? null
+                        : (value) => updateState(() => selectedCluster = value),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isLoading
                       ? null
-                      : (value) =>
-                            setDialogState(() => editSelectedCluster = value),
+                      : () {
+                          Navigator.pop(dialogContext);
+                          nameController.dispose();
+                        },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isLoading ? null : handleSave,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF003E70),
+                  ),
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Save',
+                          style: TextStyle(color: Colors.white),
+                        ),
                 ),
               ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: isDialogLoading
-                    ? null
-                    : () {
-                        nameController.dispose();
-                        Navigator.pop(dialogContext);
-                      },
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF003E70),
-                ),
-                onPressed: isDialogLoading
-                    ? null
-                    : () async {
-                        final newName = nameController.text.trim();
-                        final newCluster = editSelectedCluster;
-
-                        setDialogState(() {
-                          inlineError = null;
-                          isDialogLoading = true;
-                        });
-
-                        // Check empty fields
-                        if (newName.isEmpty || newCluster == null) {
-                          setDialogState(() {
-                            inlineError = 'Please fill all required fields.';
-                            isDialogLoading = false;
-                          });
-                          return;
-                        }
-
-                        // Check if nothing changed
-                        if (newName == technician['name'] &&
-                            newCluster == technician['cluster']) {
-                          Navigator.pop(dialogContext); // Close immediately
-                          return;
-                        }
-
-                        try {
-                          final supabase = Supabase.instance.client;
-
-                          // Check if new name already exists (case-insensitive)
-                          final existing = await supabase
-                              .from('technicians')
-                              .select('id')
-                              .ilike('name', newName) // case-insensitive
-                              .neq('id', technician['id'])
-                              .maybeSingle();
-
-                          if (existing != null) {
-                            setDialogState(() {
-                              inlineError = 'Technician already exists.';
-                              isDialogLoading = false;
-                            });
-                            return;
-                          }
-
-                          // Proceed with update
-                          await supabase
-                              .from('technicians')
-                              .update({'name': newName, 'cluster': newCluster})
-                              .eq('id', technician['id']);
-
-                          await fetchTechnicians();
-
-                          if (mounted) {
-                            Navigator.pop(dialogContext);
-
-                            _showSnack(
-                              'Technician updated successfully!',
-                              //color: const Color.fromARGB(255, 255, 193, 7),
-                              //textColor: Colors.black,
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            setDialogState(() {
-                              inlineError = 'Error updating technician: $e';
-                              isDialogLoading = false;
-                            });
-                          }
-                        }
-                      },
-                child: isDialogLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Save', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
   }
 
+  /*
   Future<void> updateQuery({
     required Map<String, dynamic> technician,
     required TextEditingController nameController,
     required String? selectedCluster,
     required BuildContext dialogContext,
   }) async {
-    // Prevent multiple simultaneous operations
     if (isUpdating) return;
 
     final name = nameController.text.trim();
     final cluster = selectedCluster;
 
+    // VALIDATION BEFORE POP
     if (name.isEmpty || cluster == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill all required fields.'),
-          backgroundColor: Color.fromARGB(255, 255, 193, 7),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (mounted) _showSnack("Please fill all required fields.");
       return;
     }
 
     setState(() => isUpdating = true);
-    Navigator.pop(dialogContext);
+
+    // CLOSE DIALOG
+    if (Navigator.canPop(dialogContext)) {
+      _showSnack("Technician updated successfully");
+      Navigator.pop(dialogContext);
+    }
 
     try {
       await Supabase.instance.client
@@ -521,25 +526,19 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
           .eq('id', technician['id']);
 
       await fetchTechnicians();
-
-      if (mounted) {
-        _showSnack('Technician updated successfully');
-      }
     } catch (e) {
       if (mounted) {
-        _showSnack(
-          'Error updating technician: $e',
-          color: Colors.red,
-          //textColor: Colors.black,
-        );
+        _showSnack("Failed to update: $e");
       }
     } finally {
       nameController.dispose();
+
       if (mounted) {
         setState(() => isUpdating = false);
       }
     }
   }
+  */
 
   void _showDeleteTechnicianDialog(Map<String, dynamic> technician) {
     showDialog(
@@ -899,7 +898,7 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                                       ],
                                     );
                                     if (selected == 'edit')
-                                      showEditTechnicianDialog(tech);
+                                      editTechnician(tech);
                                     if (selected == 'delete')
                                       _showDeleteTechnicianDialog(tech);
                                   },

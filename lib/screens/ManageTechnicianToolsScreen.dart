@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
@@ -16,6 +16,9 @@ class ManageTechnicianToolsScreen extends StatefulWidget {
 
 class _ManageTechnicianToolsScreenState
     extends State<ManageTechnicianToolsScreen> {
+  late ScrollController _scrollController;
+  bool _showScrollToTop = false;
+
   final _supabase = Supabase.instance.client;
   final ImagePicker _picker = ImagePicker();
 
@@ -31,6 +34,21 @@ class _ManageTechnicianToolsScreenState
   void initState() {
     super.initState();
     _fetchTechnicianTools();
+    _scrollController = ScrollController();
+
+    _scrollController.addListener(() {
+      if (_scrollController.offset > 200 && !_showScrollToTop) {
+        setState(() => _showScrollToTop = true);
+      } else if (_scrollController.offset <= 200 && _showScrollToTop) {
+        setState(() => _showScrollToTop = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchTechnicianTools() async {
@@ -132,6 +150,15 @@ class _ManageTechnicianToolsScreenState
       if (!mounted) return;
       setState(() => _hasChanges = false);
 
+      Fluttertoast.showToast(
+        msg: "Saved ${changedTools.length} changes",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
+      );
+
+      /*
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Saved ${changedTools.length} changes'),
@@ -140,6 +167,7 @@ class _ManageTechnicianToolsScreenState
           behavior: SnackBarBehavior.floating,
         ),
       );
+      */
     } catch (e) {
       debugPrint('❌ Error saving changes: $e');
 
@@ -198,8 +226,8 @@ class _ManageTechnicianToolsScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Photo captured successfully!'),
-          backgroundColor: Colors.green,
+          content: Text('Photo captured'),
+          backgroundColor: Color(0xFF003E70), //blue
           duration: Duration(seconds: 2),
         ),
       );
@@ -210,10 +238,11 @@ class _ManageTechnicianToolsScreenState
     if (_imageFile == null) return;
 
     try {
-      await Share.shareXFiles(
-        [XFile(_imageFile!.path)],
-        text: 'Technician Tools Photo',
-      );
+      final technicianName = widget.technician?['name'] ?? "Technician";
+
+      await Share.shareXFiles([
+        XFile(_imageFile!.path),
+      ], text: "$technicianName Photo");
     } catch (e) {
       debugPrint('❌ Error sharing photo: $e');
       if (!mounted) return;
@@ -228,12 +257,11 @@ class _ManageTechnicianToolsScreenState
 
   Widget _buildCategoryTools(String category) {
     final filteredTools =
-        _tools.where((tool) => tool['category'] == category).toList()
-          ..sort(
-            (a, b) => (a['name'] as String).toLowerCase().compareTo(
-                  (b['name'] as String).toLowerCase(),
-                ),
-          );
+        _tools.where((tool) => tool['category'] == category).toList()..sort(
+          (a, b) => (a['name'] as String).toLowerCase().compareTo(
+            (b['name'] as String).toLowerCase(),
+          ),
+        );
 
     if (filteredTools.isEmpty) {
       return const SizedBox.shrink();
@@ -387,8 +415,9 @@ class _ManageTechnicianToolsScreenState
                                 ? null
                                 : (value) {
                                     setState(() {
-                                      tool['status'] =
-                                          value == true ? 'Onhand' : 'None';
+                                      tool['status'] = value == true
+                                          ? 'Onhand'
+                                          : 'None';
                                     });
                                     _checkForChanges();
                                   },
@@ -463,6 +492,7 @@ class _ManageTechnicianToolsScreenState
     }
 
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
       children: [
         Row(
@@ -522,11 +552,7 @@ class _ManageTechnicianToolsScreenState
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.photo_camera,
-                  color: Colors.white,
-                  size: 24,
-                ),
+                const Icon(Icons.photo_camera, color: Colors.white, size: 24),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
@@ -583,15 +609,37 @@ class _ManageTechnicianToolsScreenState
               onRefresh: _fetchTechnicianTools,
               child: _buildToolsList(),
             ),
+
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FloatingActionButton(
-            heroTag: 'camera',
-            onPressed: _takePicture,
-            backgroundColor: const Color(0xFF003E70),
-            child: const Icon(Icons.camera_alt, color: Colors.white),
-          ),
+          if (_showScrollToTop) ...[
+            FloatingActionButton(
+              heroTag: 'scrollUp',
+              mini: true,
+              onPressed: () {
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOut,
+                );
+              },
+              backgroundColor: Colors.grey.shade900,
+              child: const Icon(Icons.arrow_upward, color: Colors.white),
+            ),
+            const SizedBox(height: 5),
+          ],
+
+          // Hide camera when _hasChanges = true
+          if (!_hasChanges) ...[
+            FloatingActionButton(
+              heroTag: 'camera',
+              onPressed: _takePicture,
+              backgroundColor: const Color(0xFF003E70),
+              child: const Icon(Icons.camera_alt, color: Colors.white),
+            ),
+          ],
+
           if (_hasChanges) ...[
             const SizedBox(height: 16),
             FloatingActionButton.extended(

@@ -105,7 +105,7 @@ class _MyAppState extends State<MyApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,
-        primaryColor: const Color(0xFF003E70),
+        primaryColor: const Color(0xFF003E70), //blue
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF003E70),
           brightness: Brightness.light,

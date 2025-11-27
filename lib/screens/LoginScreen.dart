@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,6 +27,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadSavedCredentials();
+
+    // Listen for auth changes (manual login or Google OAuth)
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final session = data.session;
+
+      if (session != null) {
+        // user logged in successfully
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userId', session.user.id);
+
+        if (mounted) context.go('/dashboard');
+      }
+    });
   }
 
   @override
@@ -33,6 +47,31 @@ class _LoginScreenState extends State<LoginScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loginWithGoogle() async {
+    await dotenv.load(fileName: ".env");
+    final GoogleWebClientID = dotenv.env['GoogleWebClientID'];
+
+    if (GoogleWebClientID == null) {
+      throw Exception("GoogleWebClientID is missing in .env");
+    }
+
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: "com.example.tools_audit_app://auth-callback",
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google login failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadSavedCredentials() async {
@@ -304,7 +343,49 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      /*
+                      Row(
+                        children: const [
+                          Expanded(child: Divider()),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text("OR"),
+                          ),
+                          Expanded(child: Divider()),
+                        ],
+                      ),
                       const SizedBox(height: 16),
+                   
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            side: BorderSide(color: Color(0xFF003E70)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: _loginWithGoogle,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.login, color: Color(0xFF003E70)),
+                              SizedBox(width: 8),
+                              Text(
+                                "Continue with Google",
+                                style: TextStyle(
+                                  color: Color(0xFF003E70),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      */
 
                       // Signup
                       GestureDetector(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class AddNewToolPage extends StatefulWidget {
   const AddNewToolPage({super.key});
@@ -14,39 +15,63 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   String? _selectedCategory;
   bool _isLoading = false;
   bool _isSearching = false;
+  late ScrollController _scrollController;
+  bool _showScrollToTop = false;
+  String? _selectedFilterCategory; // null = show all
 
   List<dynamic> _tools = [];
   List<dynamic> _filteredTools = [];
+  List<String> _categories = [];
 
+  /*
   static const _categories = [
     'PPE',
     'Common Tools',
     'GPON Tools',
     'Additional Tools',
   ];
+  */
 
   @override
   void initState() {
     super.initState();
     _fetchTools();
+    _fetchCategories();
+
+    _scrollController = ScrollController();
+    _scrollController.addListener(() {
+      if (_scrollController.offset > 200 && !_showScrollToTop) {
+        setState(() => _showScrollToTop = true);
+      } else if (_scrollController.offset <= 200 && _showScrollToTop) {
+        setState(() => _showScrollToTop = false);
+      }
+    });
   }
 
   @override
   void dispose() {
     _toolNameController.dispose();
     _searchController.dispose();
+
+    _scrollController.dispose();
     super.dispose();
   }
 
-  void _showSnack(String message, {Color color = const Color(0xFF003E70)}) {
+  /*
+  void _showSnack(
+    String message, {
+    Color color = const Color(0xFF003E70),
+    Color textColor = Colors.white,
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: const TextStyle(color: Colors.white)),
+        content: Text(message, style: TextStyle(color: textColor)),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
+  */
 
   void _filterTools(String query) {
     setState(() {
@@ -59,6 +84,23 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
               return name.contains(search) || category.contains(search);
             }).toList();
     });
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('categories')
+          .select('name')
+          .order('name', ascending: true);
+
+      setState(() {
+        _categories = data
+            .map<String>((item) => item['name'] as String)
+            .toList();
+      });
+    } catch (e) {
+      print("Error fetching categories: $e");
+    }
   }
 
   Future<void> _fetchTools() async {
@@ -78,6 +120,125 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _showAddCategoryDialog() async {
+    TextEditingController _categoryController = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        bool isDialogLoading = false;
+        String? errorMessage;
+
+        return StatefulBuilder(
+          builder: (_, setStateDialog) => AlertDialog(
+            title: const Text('Add Category'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _categoryController,
+                  decoration: const InputDecoration(
+                    labelText: 'Category Name *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // INLINE ERROR MESSAGE
+                if (errorMessage != null)
+                  Text(
+                    errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+
+              // Loading spinner
+              isDialogLoading
+                  ? const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(),
+                    )
+                  : ElevatedButton.icon(
+                      onPressed: () async {
+                        final name = _categoryController.text.trim();
+
+                        // VALIDATION
+                        if (name.isEmpty) {
+                          setStateDialog(() {
+                            errorMessage = 'Category name is required.';
+                          });
+                          return;
+                        }
+
+                        setStateDialog(() {
+                          isDialogLoading = true;
+                          errorMessage = null;
+                        });
+
+                        try {
+                          // Check if category exists
+                          final exists = await Supabase.instance.client
+                              .from('categories')
+                              .select('category_id')
+                              .ilike('name', name)
+                              .maybeSingle();
+
+                          if (exists != null) {
+                            setStateDialog(() {
+                              isDialogLoading = false;
+                              errorMessage =
+                                  'Category already exists. Try another name.';
+                            });
+                            return;
+                          }
+
+                          // Insert new category
+                          await Supabase.instance.client
+                              .from('categories')
+                              .insert({'name': name});
+
+                          Navigator.pop(dialogContext); // Close dialog
+
+                          Fluttertoast.showToast(
+                            msg: "Category added successfully",
+                            toastLength: Toast.LENGTH_SHORT,
+                            gravity: ToastGravity.BOTTOM,
+                            backgroundColor: Colors.green,
+                            textColor: Colors.white,
+                          );
+
+                          await _fetchCategories(); // Refresh dropdown
+                        } catch (e) {
+                          setStateDialog(() {
+                            isDialogLoading = false;
+                            errorMessage = 'Error: $e';
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text(
+                        'Add',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF003E70),
+                      ),
+                    ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showAddDialog() async {
@@ -184,8 +345,16 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                           });
 
                           Navigator.pop(dialogContext); // close dialog
+
+                          Fluttertoast.showToast(
+                            msg: "Tool added successfully",
+                            toastLength: Toast.LENGTH_SHORT,
+                            gravity: ToastGravity.BOTTOM,
+                            backgroundColor: Colors.green,
+                            textColor: Colors.white,
+                          );
                           await _fetchTools();
-                          _showSnack('Tool added successfully!');
+                          //_showSnack('Tool added successfully');
                         } catch (e) {
                           setStateDialog(() {
                             isDialogLoading = false;
@@ -207,35 +376,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         );
       },
     );
-  }
-
-  Future<bool> addToolQuery({
-    required String name,
-    required String category,
-  }) async {
-    try {
-      // Check if tool exists
-      final exists = await Supabase.instance.client
-          .from('tools')
-          .select('tools_id')
-          .ilike('name', name)
-          .maybeSingle();
-
-      if (exists != null) {
-        return false; // Tool already exists
-      }
-
-      // Insert new tool
-      await Supabase.instance.client.from('tools').insert({
-        'name': name,
-        'category': category,
-      });
-
-      return true; // Successfully added
-    } catch (e) {
-      debugPrint('❌ Error adding tool: $e');
-      rethrow;
-    }
   }
 
   // Function to update tool
@@ -273,6 +413,13 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
           .update({'name': updatedName, 'category': updatedCategory})
           .eq('tools_id', tool['tools_id']);
 
+      Fluttertoast.showToast(
+        msg: "Tool updated successfully",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
+      );
       return "success";
     } catch (e) {
       return "error: $e";
@@ -285,10 +432,19 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
           .from('tools')
           .delete()
           .eq('tools_id', toolId);
-      _showSnack('Tool deleted successfully!');
+      //_showSnack('Tool deleted successfully', textColor: Colors.red);
+
+      Fluttertoast.showToast(
+        msg: "Tool deleted successfully",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
+
       await _fetchTools();
     } catch (e) {
-      _showSnack('Error deleting tool: $e', color: Colors.red);
+      //_showSnack('Error deleting tool: $e', color: Colors.red);
     }
   }
 
@@ -397,7 +553,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
 
                         // SUCCESS → CLOSE DIALOG
                         Navigator.pop(dialogContext);
-                        _showSnack("Tool updated successfully!");
+                        //_showSnack("Tool updated successfully");
                         await _fetchTools();
                       },
                       child: const Text(
@@ -420,12 +576,12 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         content: const Text('Are you sure you want to remove this tool?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(context), //removes dialog
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(context); //removes dialog
               _deleteTool(toolId);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -590,6 +746,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     final isDarkMode = theme.brightness == Brightness.dark;
 
     return ListView(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       children: groupedTools.entries.expand((entry) {
         final categoryName = entry.key;
@@ -620,6 +777,28 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     final bgColor = isDarkMode ? Colors.black : Colors.grey[100];
 
     return Scaffold(
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (_showScrollToTop) ...[
+            FloatingActionButton(
+              heroTag: 'scrollUp',
+              mini: true,
+              onPressed: () {
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 400), //
+                  curve: Curves.fastOutSlowIn, // more natural material curve
+                );
+              },
+              backgroundColor: Colors.grey.shade900,
+              child: const Icon(Icons.arrow_upward, color: Colors.white),
+            ),
+            const SizedBox(height: 5),
+          ],
+        ],
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.miniStartFloat,
       backgroundColor: bgColor,
       appBar: AppBar(
         title: const Text('Manage Tools'),
@@ -637,29 +816,95 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
               padding: const EdgeInsets.all(16),
               child: _buildSearchBar(),
             ),
-            // Add button
+            // Add New tool button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _showAddDialog,
-                  icon: const Icon(Icons.add, size: 20, color: Colors.white),
-                  label: const Text(
-                    'Add New Tool',
-                    style: TextStyle(fontSize: 14, color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF003E70),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+              child: Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.end, // Align both buttons to right
+                children: [
+                  // Add New Category Button
+                  ElevatedButton.icon(
+                    onPressed:
+                        _showAddCategoryDialog, // <-- create this function
+                    icon: const Icon(Icons.add, size: 20, color: Colors.black),
+                    label: const Text(
+                      'Add New Category',
+                      style: TextStyle(fontSize: 14, color: Colors.black),
                     ),
-                    elevation: 2,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      side: const BorderSide(
+                        // <-- OUTLINE COLOR
+                        color: Color(0xFF003E70),
+                        width: 1,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 2,
+                    ),
                   ),
-                ),
+
+                  const SizedBox(width: 10),
+
+                  // Add New Tool Button
+                  ElevatedButton.icon(
+                    onPressed: _showAddDialog,
+                    icon: const Icon(Icons.add, size: 20, color: Colors.white),
+                    label: const Text(
+                      'Add New Tool',
+                      style: TextStyle(fontSize: 14, color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF003E70),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 2,
+                    ),
+                  ),
+                ],
               ),
             ),
+
+            SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: DropdownButtonFormField<String>(
+                value: _selectedFilterCategory,
+                decoration: InputDecoration(
+                  labelText: 'Filter by Category',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                items: [null, ..._categories].map((c) {
+                  return DropdownMenuItem<String>(
+                    value: c,
+                    child: Text(c ?? 'All Categories'),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedFilterCategory = value;
+                    _filteredTools = _tools.where((tool) {
+                      if (value == null) return true;
+                      return tool['category'] == value;
+                    }).toList();
+                  });
+                },
+              ),
+            ),
+
             const SizedBox(height: 12),
             // Tool list
             Expanded(child: _buildToolList()),
