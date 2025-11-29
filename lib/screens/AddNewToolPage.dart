@@ -19,6 +19,8 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   bool _showScrollToTop = false;
   String? _selectedFilterCategory; // null = show all
 
+  bool _isCategoriesLoading = true;
+
   List<dynamic> _tools = [];
   List<dynamic> _filteredTools = [];
   List<String> _categories = [];
@@ -87,19 +89,33 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   }
 
   Future<void> _fetchCategories() async {
+    setState(() => _isCategoriesLoading = true);
+
     try {
       final data = await Supabase.instance.client
           .from('categories')
-          .select('name')
-          .order('name', ascending: true);
+          .select('name');
+
+      final uniqueCategories =
+          data
+              .map<String>((item) => item['name'] as String)
+              .toSet() // remove duplicates
+              .toList()
+            ..sort(); // optional: alphabetize
 
       setState(() {
-        _categories = data
-            .map<String>((item) => item['name'] as String)
-            .toList();
+        _categories = uniqueCategories;
+        _isCategoriesLoading = false;
+
+        // Fix invalid selected category
+        if (_selectedFilterCategory != null &&
+            !_categories.contains(_selectedFilterCategory)) {
+          _selectedFilterCategory = null; // reset
+        }
       });
     } catch (e) {
       print("Error fetching categories: $e");
+      setState(() => _isCategoriesLoading = false);
     }
   }
 
@@ -135,25 +151,26 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         return StatefulBuilder(
           builder: (_, setStateDialog) => AlertDialog(
             title: const Text('Add Category'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _categoryController,
-                  decoration: const InputDecoration(
-                    labelText: 'Category Name *',
-                    border: OutlineInputBorder(),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _categoryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Category Name *',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
-                // INLINE ERROR MESSAGE
-                if (errorMessage != null)
-                  Text(
-                    errorMessage!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-              ],
+                  if (errorMessage != null)
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -161,7 +178,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                 child: const Text('Cancel'),
               ),
 
-              // Loading spinner
               isDialogLoading
                   ? const SizedBox(
                       width: 28,
@@ -172,7 +188,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                       onPressed: () async {
                         final name = _categoryController.text.trim();
 
-                        // VALIDATION
                         if (name.isEmpty) {
                           setStateDialog(() {
                             errorMessage = 'Category name is required.';
@@ -187,13 +202,14 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
 
                         try {
                           // Check if category exists
-                          final exists = await Supabase.instance.client
+                          final result = await Supabase.instance.client
                               .from('categories')
-                              .select('category_id')
-                              .ilike('name', name)
+                              .select('id, name') // safer
+                              .ilike('name', name) // case-insensitive
+                              .limit(1) // avoids maybeSingle error
                               .maybeSingle();
 
-                          if (exists != null) {
+                          if (result != null) {
                             setStateDialog(() {
                               isDialogLoading = false;
                               errorMessage =
@@ -207,7 +223,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                               .from('categories')
                               .insert({'name': name});
 
-                          Navigator.pop(dialogContext); // Close dialog
+                          Navigator.pop(dialogContext);
 
                           Fluttertoast.showToast(
                             msg: "Category added successfully",
@@ -217,12 +233,13 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                             textColor: Colors.white,
                           );
 
-                          await _fetchCategories(); // Refresh dropdown
+                          await _fetchCategories();
                         } catch (e) {
                           setStateDialog(() {
                             isDialogLoading = false;
-                            errorMessage = 'Error: $e';
+                            errorMessage = 'Error adding category.';
                           });
+                          print("CATEGORY ERROR: $e");
                         }
                       },
                       icon: const Icon(Icons.add, color: Colors.white),
@@ -438,7 +455,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         msg: "Tool deleted successfully",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
+        backgroundColor: const Color(0xFF003E70),
         textColor: Colors.white,
       );
 
@@ -591,6 +608,120 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     );
   }
 
+  Future<void> editCategory(String oldName) async {
+    final TextEditingController controller = TextEditingController(
+      text: oldName,
+    );
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        String? error;
+        bool isLoading = false;
+        return StatefulBuilder(
+          builder: (_, setStateDialog) => AlertDialog(
+            title: const Text('Edit Category'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    labelText: 'Category Name',
+                    border: const OutlineInputBorder(),
+                    errorText: error,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              isLoading
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton(
+                      onPressed: () async {
+                        final newName = controller.text.trim();
+                        if (newName.isEmpty) {
+                          setStateDialog(
+                            () => error = 'Category name cannot be empty',
+                          );
+                          return;
+                        }
+                        setStateDialog(() => isLoading = true);
+                        try {
+                          // Update category in Supabase
+                          await Supabase.instance.client
+                              .from('categories')
+                              .update({'name': newName})
+                              .eq('name', oldName);
+
+                          // 2️⃣ Update all tools that use this category
+                          await Supabase.instance.client
+                              .from('tools')
+                              .update({'category': newName})
+                              .eq('category', oldName);
+
+                          Navigator.pop(dialogContext);
+                          await _fetchCategories();
+                          await _fetchTools(); // refresh tools list
+                        } catch (e) {
+                          setStateDialog(() => error = 'Error: $e');
+                          setStateDialog(() => isLoading = false);
+                        }
+                      },
+                      child: const Text('Update'),
+                    ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> deleteCategory(String categoryName) async {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Category'),
+        content: Text('Are you sure you want to delete "$categoryName"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await Supabase.instance.client
+                    .from('categories')
+                    .delete()
+                    .eq('name', categoryName);
+
+                // Optional: Also set old tools to "Uncategorized"
+                await Supabase.instance.client
+                    .from('tools')
+                    .update({'category': 'Uncategorized'})
+                    .eq('category', categoryName);
+
+                await _fetchCategories();
+                await _fetchTools();
+              } catch (e) {
+                Fluttertoast.showToast(msg: "Error deleting category: $e");
+              }
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSearchBar() {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -733,7 +864,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             Icon(Icons.cancel_outlined, size: 70, color: Colors.grey[500]),
             const SizedBox(height: 10),
             Text(
-              'No tools found',
+              'No results found',
               style: TextStyle(fontSize: 16, color: Colors.grey[500]),
             ),
           ],
@@ -755,13 +886,40 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         return [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              categoryName,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: isDarkMode ? Colors.white : Colors.black87,
-              ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  categoryName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                  ),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.edit,
+                        size: 20,
+                        color: Color(0xFF003E70), //blue
+                      ),
+                      onPressed: () => editCategory(categoryName),
+                      tooltip: 'Edit Category',
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.delete,
+                        size: 20,
+                        color: Colors.redAccent,
+                      ),
+                      onPressed: () => deleteCategory(categoryName),
+                      tooltip: 'Delete Category',
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
           ...toolsInCategory.map((tool) => _buildToolCard(tool)),
@@ -816,7 +974,44 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
               padding: const EdgeInsets.all(16),
               child: _buildSearchBar(),
             ),
-            // Add New tool button
+
+            //SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: DropdownButtonFormField<String>(
+                value: _selectedFilterCategory,
+                decoration: InputDecoration(
+                  labelText: 'Filter by Category',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                items: _isCategoriesLoading
+                    ? [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('Loading categories...'),
+                        ),
+                      ]
+                    : [null, ..._categories].map((c) {
+                        return DropdownMenuItem<String>(
+                          value: c,
+                          child: Text(c ?? 'All Categories'),
+                        );
+                      }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedFilterCategory = value;
+                    _filteredTools = _tools.where((tool) {
+                      if (value == null) return true;
+                      return tool['category'] == value;
+                    }).toList();
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Add New Category button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -876,36 +1071,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
               ),
             ),
 
-            SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: DropdownButtonFormField<String>(
-                value: _selectedFilterCategory,
-                decoration: InputDecoration(
-                  labelText: 'Filter by Category',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                items: [null, ..._categories].map((c) {
-                  return DropdownMenuItem<String>(
-                    value: c,
-                    child: Text(c ?? 'All Categories'),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedFilterCategory = value;
-                    _filteredTools = _tools.where((tool) {
-                      if (value == null) return true;
-                      return tool['category'] == value;
-                    }).toList();
-                  });
-                },
-              ),
-            ),
-
-            const SizedBox(height: 12),
             // Tool list
             Expanded(child: _buildToolList()),
           ],

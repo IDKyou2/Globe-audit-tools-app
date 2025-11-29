@@ -1,4 +1,5 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -233,7 +234,7 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  IconData? _getCategoryIcon(String category) {
+  IconData _getCategoryIcon(String category) {
     switch (category) {
       case 'PPE':
         return Icons.security;
@@ -246,7 +247,7 @@ class _ManageTechnicianToolsScreenState
       case 'Vehicle':
         return Icons.car_rental;
       default:
-        return null;
+        return Icons.category;
     }
   }
 
@@ -345,7 +346,7 @@ class _ManageTechnicianToolsScreenState
           title: const Text('Sign Here'),
           content: SizedBox(
             width: double.maxFinite,
-            height: 300, // Bigger signature pad
+            height: 400, // bigger height
             child: Signature(
               controller: _signatureController,
               backgroundColor: Colors.grey[200]!,
@@ -367,29 +368,69 @@ class _ManageTechnicianToolsScreenState
 
                       isSharing = true;
 
-                      // Get signature bytes
+                      // Get signature as bytes
                       final sigBytes = await _signatureController.toPngBytes();
                       if (sigBytes == null) return;
+
+                      // Load signature into an Image for drawing
+                      final sigImage = await decodeImageFromList(sigBytes);
 
                       final technicianName =
                           widget.technician?['name'] ?? 'Technician';
 
-                      // Sanitize name for filename
-                      final safeName = technicianName.replaceAll(
-                        RegExp(r'\s+'),
-                        '_',
+                      // Create a new image with extra space for the name
+                      final recorder = PictureRecorder();
+                      final canvas = Canvas(recorder);
+                      final paint = Paint();
+
+                      final width = sigImage.width.toDouble();
+                      final height =
+                          sigImage.height.toDouble() + 40; // extra for name
+
+                      // Draw signature
+                      canvas.drawImage(sigImage, Offset.zero, paint);
+
+                      // Draw name below signature
+                      final textPainter = TextPainter(
+                        text: TextSpan(
+                          text: technicianName,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        textDirection: TextDirection.ltr,
+                      );
+                      textPainter.layout(minWidth: width, maxWidth: width);
+                      textPainter.paint(
+                        canvas,
+                        Offset(0, sigImage.height.toDouble() + 5),
                       );
 
-                      // Share image directly without adding text
+                      // Convert to image
+                      final picture = recorder.endRecording();
+                      final img = await picture.toImage(
+                        width.toInt(),
+                        height.toInt(),
+                      );
+                      final byteData = await img.toByteData(
+                        format: ImageByteFormat.png,
+                      );
+                      if (byteData == null) return;
+
+                      final combinedBytes = byteData.buffer.asUint8List();
+
+                      // Share directly
                       final tempFile = XFile.fromData(
-                        sigBytes,
+                        combinedBytes,
                         mimeType: 'image/png',
-                        name: 'signature_$safeName.png',
+                        name: 'signature_$technicianName.png',
                       );
 
                       await Share.shareXFiles([
                         tempFile,
-                      ], text: "$technicianName's_E-signature");
+                      ], text: "$technicianName's E-signature");
 
                       Navigator.pop(context);
                     },
@@ -415,8 +456,8 @@ class _ManageTechnicianToolsScreenState
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'Tools & Requirements',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              'All Tools',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
             TextButton.icon(
               onPressed: () {
@@ -459,8 +500,6 @@ class _ManageTechnicianToolsScreenState
   }
 
   Widget _buildCategoryTools(String category) {
-    final iconData = _getCategoryIcon(category);
-
     // Filter tools that belong to this category
     final filteredTools =
         _tools
@@ -509,10 +548,11 @@ class _ManageTechnicianToolsScreenState
               ),
               child: Row(
                 children: [
-                  iconData != null
-                      ? Icon(iconData, color: Colors.white, size: 24)
-                      : const SizedBox.shrink(), // disappears if null
-
+                  Icon(
+                    _getCategoryIcon(category),
+                    color: Colors.white,
+                    size: 24,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -551,23 +591,20 @@ class _ManageTechnicianToolsScreenState
                   Expanded(
                     flex: 4,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: const [
                         Text(
                           'Onhand',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Spacer(),
                         Text(
                           'None',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Spacer(),
                         Text(
                           'Missing',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        Spacer(),
                         Text(
                           'Defective',
                           style: TextStyle(fontWeight: FontWeight.bold),

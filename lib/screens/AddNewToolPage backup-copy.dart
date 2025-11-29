@@ -593,7 +593,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             Icon(Icons.cancel_outlined, size: 70, color: Colors.grey[500]),
             const SizedBox(height: 10),
             Text(
-              'No tools found',
+              'No results found',
               style: TextStyle(fontSize: 16, color: Colors.grey[500]),
             ),
           ],

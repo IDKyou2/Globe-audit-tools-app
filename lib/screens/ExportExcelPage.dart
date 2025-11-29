@@ -181,7 +181,7 @@ class _ExportExcelPageState extends State<ExportExcelPage> {
   Future<void> _openFile(String filePath) async {
     try {
       final result = await OpenFile.open(filePath);
-      
+
       if (result.type != ResultType.done && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

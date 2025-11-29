@@ -74,8 +74,9 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
       final response = await supabase
           .from('technicians')
           .select()
-          .order('last_checked_at', ascending: false, nullsFirst: true)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false) // SECOND priority
+          .order('last_checked_at', ascending: false); // FIRST priority
+      //.order('created_at', ascending: false); // Newest first
 
       if (mounted) {
         setState(() {
