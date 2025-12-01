@@ -275,16 +275,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: _toolNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tool Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
+                //Category input
                 DropdownButtonFormField<String>(
                   value: _selectedCategory,
                   decoration: const InputDecoration(
@@ -296,7 +287,15 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                       .toList(),
                   onChanged: (v) => setStateDialog(() => _selectedCategory = v),
                 ),
-
+                const SizedBox(height: 16),
+                TextField(
+                  //Name input
+                  controller: _toolNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tool Name *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
                 const SizedBox(height: 10),
 
                 // === INLINE VALIDATION MESSAGE ===
@@ -696,15 +695,29 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
               Navigator.pop(context);
               try {
                 await Supabase.instance.client
+                    .from('tools')
+                    .delete()
+                    .eq('category', categoryName);
+
+                //categories table
+                await Supabase.instance.client
                     .from('categories')
                     .delete()
                     .eq('name', categoryName);
 
-                // Optional: Also set old tools to "Uncategorized"
-                await Supabase.instance.client
-                    .from('tools')
-                    .update({'category': 'Uncategorized'})
-                    .eq('category', categoryName);
+                // // Optional: Also set old tools to "Uncategorized"
+                // await Supabase.instance.client
+                //     .from('tools')
+                //     .update({'category': 'Uncategorized'})
+                //     .eq('category', categoryName);
+
+                Fluttertoast.showToast(
+                  msg: "Category deleted",
+                  toastLength: Toast.LENGTH_SHORT,
+                  gravity: ToastGravity.BOTTOM,
+                  backgroundColor: Color(0xFF003E70),
+                  textColor: Colors.red,
+                );
 
                 await _fetchCategories();
                 await _fetchTools();

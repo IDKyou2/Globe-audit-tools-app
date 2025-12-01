@@ -1,14 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:excel/excel.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ExportOptionsPage extends StatefulWidget {
   const ExportOptionsPage({super.key});
+  
 
   @override
   State<ExportOptionsPage> createState() => _ExportOptionsPageState();
@@ -18,8 +21,18 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
   bool _exporting = false;
   String? _lastExportedFilePath;
   String? _lastExportType;
+  
 
   Future<void> exportExcel() async {
+  
+      // Request storage permission
+  final status = await Permission.manageExternalStorage.request();
+
+  if (!status.isGranted) {
+    Fluttertoast.showToast(msg: "Storage permission denied");
+    return;
+  }
+
     setState(() => _exporting = true);
 
     try {

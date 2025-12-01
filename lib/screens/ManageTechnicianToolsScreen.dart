@@ -233,8 +233,10 @@ class _ManageTechnicianToolsScreenState
         return Icons.build;
       case 'Additional Tools':
         return Icons.construction;
-      case 'Vehicle':
+      case 'Vehicle Requirements':
         return Icons.car_rental;
+      case 'Technician Requirements':
+        return Icons.engineering;
       default:
         return null;
     }
