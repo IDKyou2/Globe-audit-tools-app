@@ -12,7 +12,7 @@ class AddNewToolPage extends StatefulWidget {
 class _AddNewToolPageState extends State<AddNewToolPage> {
   final _toolNameController = TextEditingController();
   final _searchController = TextEditingController();
-  int? _selectedCategory;
+  String? _selectedCategory;
   bool _isLoading = false;
   bool _isSearching = false;
   late ScrollController _scrollController;
@@ -24,6 +24,15 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   List<dynamic> _tools = [];
   List<dynamic> _filteredTools = [];
   List<String> _categories = [];
+
+  /*
+  static const _categories = [
+    'PPE',
+    'Common Tools',
+    'GPON Tools',
+    'Additional Tools',
+  ];
+  */
 
   @override
   void initState() {
@@ -115,11 +124,8 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     try {
       final result = await Supabase.instance.client
           .from('tools')
-          .select(
-            'tools_id, name, category_id (id, name)',
-          ) // fetch category id and name
+          .select('tools_id, name, category')
           .order('created_at', ascending: false);
-
       if (!mounted) return;
       setState(() {
         _tools = result;
@@ -252,17 +258,16 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     );
   }
 
-  // Add Tool Dialog
-  Future<void> _showAddNewToolDialog() async {
+  Future<void> _showAddDialog() async {
     _toolNameController.clear();
-    String? _selectedCategory;
+    _selectedCategory = null;
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         bool isDialogLoading = false;
-        String? errorMessage;
+        String? errorMessage; // INLINE ERROR MESSAGE
 
         return StatefulBuilder(
           builder: (_, setStateDialog) => AlertDialog(
@@ -270,7 +275,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Tool name input
                 TextField(
                   controller: _toolNameController,
                   decoration: const InputDecoration(
@@ -278,9 +282,9 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+
                 const SizedBox(height: 16),
 
-                // Category dropdown
                 DropdownButtonFormField<String>(
                   value: _selectedCategory,
                   decoration: const InputDecoration(
@@ -292,8 +296,10 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                       .toList(),
                   onChanged: (v) => setStateDialog(() => _selectedCategory = v),
                 ),
+
                 const SizedBox(height: 10),
 
+                // === INLINE VALIDATION MESSAGE ===
                 if (errorMessage != null)
                   Text(
                     errorMessage!,
@@ -306,6 +312,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                 onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('Cancel'),
               ),
+
               isDialogLoading
                   ? const SizedBox(
                       width: 28,
@@ -315,9 +322,10 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                   : ElevatedButton.icon(
                       onPressed: () async {
                         final name = _toolNameController.text.trim();
-                        final categoryName = _selectedCategory;
+                        final category = _selectedCategory;
 
-                        if (name.isEmpty || categoryName == null) {
+                        // ========== VALIDATION ==========
+                        if (name.isEmpty || category == null) {
                           setStateDialog(
                             () => errorMessage =
                                 'Please fill all required fields.',
@@ -331,7 +339,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                         });
 
                         try {
-                          // Check if tool name exists
+                          // CHECK IF TOOL NAME EXISTS
                           final exists = await Supabase.instance.client
                               .from('tools')
                               .select('tools_id')
@@ -347,31 +355,13 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                             return;
                           }
 
-                          // Get category ID from name
-                          final categoryData = await Supabase.instance.client
-                              .from('categories')
-                              .select('id')
-                              .eq('name', categoryName)
-                              .maybeSingle();
-
-                          final categoryId = categoryData != null
-                              ? int.tryParse(categoryData['id'].toString())
-                              : null;
-
-                          if (categoryId == null) {
-                            setStateDialog(
-                              () => errorMessage = 'Invalid category selected.',
-                            );
-                            return;
-                          }
-
-                          // Insert tool
+                          // INSERT TOOL
                           await Supabase.instance.client.from('tools').insert({
                             'name': name,
-                            'category_id': categoryId,
+                            'category': category,
                           });
 
-                          Navigator.pop(dialogContext);
+                          Navigator.pop(dialogContext); // close dialog
 
                           Fluttertoast.showToast(
                             msg: "Tool added successfully",
@@ -380,8 +370,8 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                             backgroundColor: Colors.green,
                             textColor: Colors.white,
                           );
-
                           await _fetchTools();
+                          //_showSnack('Tool added successfully');
                         } catch (e) {
                           setStateDialog(() {
                             isDialogLoading = false;
@@ -413,19 +403,19 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   Future<String> _updateTool(
     Map<String, dynamic> tool,
     String updatedName,
-    String updatedCategory, // this is the category name
+    String updatedCategory,
   ) async {
     try {
       if (updatedName.isEmpty) return "empty";
 
-      // No changes
+      // NO CHANGES
       final oldName = tool['name'];
-      final oldCategoryName = tool['category_id']?['name'] ?? '';
-      if (updatedName == oldName && updatedCategory == oldCategoryName) {
+      final oldCategory = tool['category'];
+      if (updatedName == oldName && updatedCategory == oldCategory) {
         return "nochange";
       }
 
-      // Check for duplicate name
+      // DUPLICATE NAME
       final existing = await Supabase.instance.client
           .from('tools')
           .select()
@@ -434,19 +424,10 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
 
       if (existing.isNotEmpty) return "exists";
 
-      // Get category_id from name
-      final categoryData = await Supabase.instance.client
-          .from('categories')
-          .select('id')
-          .eq('name', updatedCategory)
-          .maybeSingle();
-
-      final categoryId = categoryData?['id'];
-
-      // Update tool
+      // UPDATE
       await Supabase.instance.client
           .from('tools')
-          .update({'name': updatedName, 'category_id': categoryId})
+          .update({'name': updatedName, 'category': updatedCategory})
           .eq('tools_id', tool['tools_id']);
 
       Fluttertoast.showToast(
@@ -456,7 +437,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         backgroundColor: Colors.green,
         textColor: Colors.white,
       );
-
       return "success";
     } catch (e) {
       return "error: $e";
@@ -469,13 +449,14 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
           .from('tools')
           .delete()
           .eq('tools_id', toolId);
+      //_showSnack('Tool deleted successfully', textColor: Colors.red);
 
       Fluttertoast.showToast(
         msg: "Tool deleted successfully",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: const Color(0xFF003E70),
-        textColor: Colors.red,
+        textColor: Colors.white,
       );
 
       await _fetchTools();
@@ -484,17 +465,11 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     }
   }
 
-  //UPDATE
   Future<void> _showUpdateDialog(Map<String, dynamic> tool) async {
     final TextEditingController nameController = TextEditingController(
       text: tool['name'],
     );
-
-    // Get category name safely from foreign key
-    String? selectedCategory = tool['category_id'] != null
-        ? tool['category_id']['name']
-        : null;
-
+    String? selectedCategory = tool['category'];
     String? inlineError;
     bool isDialogLoading = false;
 
@@ -559,7 +534,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                         final result = await _updateTool(
                           tool,
                           newName,
-                          newCategory, // Pass category name
+                          newCategory,
                         );
 
                         if (!mounted) return;
@@ -595,6 +570,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
 
                         // SUCCESS → CLOSE DIALOG
                         Navigator.pop(dialogContext);
+                        //_showSnack("Tool updated successfully");
                         await _fetchTools();
                       },
                       child: const Text(
@@ -798,16 +774,11 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     );
   }
 
-  Widget _buildToolCard(Map<String, dynamic> tool) {
+  Widget _buildToolCard(tool) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     final cardColor = isDarkMode ? Colors.grey[900] : Colors.white;
     final subtitleColor = isDarkMode ? Colors.grey[400] : Colors.grey[700];
-
-    // Safely get category name from the nested foreign key
-    final categoryName = tool['category_id'] != null
-        ? tool['category_id']['name'] ?? 'Uncategorized'
-        : 'Uncategorized';
 
     return Card(
       color: cardColor,
@@ -832,7 +803,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
           ),
         ),
         title: Text(
-          tool['name'] ?? '',
+          tool['name'],
           style: TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 15,
@@ -840,7 +811,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
           ),
         ),
         subtitle: Text(
-          categoryName,
+          tool['category'],
           style: TextStyle(color: subtitleColor, fontSize: 13),
         ),
         trailing: PopupMenuButton<String>(
@@ -867,15 +838,11 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
     final Map<String, List<dynamic>> grouped = {};
 
     for (var tool in _filteredTools) {
-      // Get category name safely from foreign key
-      final categoryName = tool['category_id'] != null
-          ? tool['category_id']['name'] ?? 'Uncategorized'
-          : 'Uncategorized';
-
-      if (!grouped.containsKey(categoryName)) {
-        grouped[categoryName] = [];
+      final category = tool['category'] ?? 'Uncategorized';
+      if (!grouped.containsKey(category)) {
+        grouped[category] = [];
       }
-      grouped[categoryName]!.add(tool);
+      grouped[category]!.add(tool);
     }
 
     return grouped;
@@ -1037,7 +1004,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                     _selectedFilterCategory = value;
                     _filteredTools = _tools.where((tool) {
                       if (value == null) return true;
-                      return tool['category_id'] == value;
+                      return tool['category'] == value;
                     }).toList();
                   });
                 },
@@ -1082,7 +1049,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
 
                   // Add New Tool Button
                   ElevatedButton.icon(
-                    onPressed: _showAddNewToolDialog,
+                    onPressed: _showAddDialog,
                     icon: const Icon(Icons.add, size: 20, color: Colors.white),
                     label: const Text(
                       'Add New Tool',

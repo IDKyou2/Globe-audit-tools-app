@@ -102,7 +102,7 @@ class _ManageTechnicianToolsScreenState
     try {
       final allTools = await _supabase
           .from('tools')
-          .select('tools_id, name, category');
+          .select('tools_id, name, category_id, categories(name)');
 
       final assignedTools = await _supabase
           .from('technician_tools')
@@ -118,7 +118,7 @@ class _ManageTechnicianToolsScreenState
         return {
           'tools_id': tool['tools_id'],
           'name': tool['name'],
-          'category': tool['category'],
+          'category': tool['categories']?['name'] ?? 'Uncategorized',
           'status': match['status'] ?? 'None',
           'original_status': match['status'] ?? 'None',
         };
