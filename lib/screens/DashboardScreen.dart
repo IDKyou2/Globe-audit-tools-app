@@ -1,3 +1,5 @@
+// ignore_for_file: file_names
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -311,7 +313,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return RefreshIndicator(
@@ -370,7 +371,7 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-/*
+  /*
   Widget buildDashboardCards(bool isDark) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -493,14 +494,14 @@ class _DashboardPageState extends State<DashboardPage> {
           const SizedBox(height: 16), // ⬅ spacing between chart and legend
 
           Wrap(
-            spacing: 16,
-            runSpacing: 8,
+            spacing: 10,
+            runSpacing: 5,
             alignment: WrapAlignment.center,
             children: [
-              _LegendItem('On-hand Tools', Colors.green, toolsOnhandCount),
-              _LegendItem('Defective Tools', Colors.red, toolsDefectiveCount),
-              _LegendItem('Technicians', Colors.orange, technicianCount),
-              _LegendItem('Total Tools', Colors.grey, totalToolsCount),
+              _LegendItem('Overall Tools On-hand', Colors.green),
+              _LegendItem('Overall Defective Tools', Colors.red),
+              _LegendItem('Total Technicians', Colors.orange),
+              _LegendItem('Total Tools', Colors.grey),
             ],
           ),
         ],
@@ -508,75 +509,6 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  /* backup
-  Widget buildPieChart(bool isDark) {
-    return Container(
-      height: 400,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [Colors.grey.shade900, Colors.grey.shade800]
-              : [Colors.white, Colors.grey.shade50],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Expanded(
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 3,
-                centerSpaceRadius: 65,
-                startDegreeOffset: -90,
-                sections: [
-                  _buildPieSection(
-                    toolsOnhandCount.toDouble(),
-                    Colors.green,
-                    Icons.check_circle,
-                  ),
-                  _buildPieSection(
-                    toolsDefectiveCount.toDouble(),
-                    Colors.red,
-                    Icons.warning,
-                  ),
-                  _buildPieSection(
-                    technicianCount.toDouble(),
-                    Colors.orange,
-                    Icons.engineering,
-                  ),
-                  _buildPieSection(
-                    totalToolsCount.toDouble(),
-                    Colors.grey,
-                    Icons.build,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _LegendItem('On-hand', Colors.green, toolsOnhandCount),
-              _LegendItem('Defective', Colors.red, toolsDefectiveCount),
-              _LegendItem('Technicians', Colors.orange, technicianCount),
-              _LegendItem('Total Tools', Colors.grey, totalToolsCount),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-*/
   PieChartSectionData _buildPieSection(
     double value,
     Color color,
@@ -688,9 +620,13 @@ class _ChartBadge extends StatelessWidget {
 class _LegendItem extends StatelessWidget {
   final String label;
   final Color color;
-  final int count;
+  //final int count;
 
-  const _LegendItem(this.label, this.color, this.count);
+  const _LegendItem(
+    this.label,
+    this.color,
+    // this.count
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -712,6 +648,7 @@ class _LegendItem extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
+        /*
         Text(
           '$count',
           style: TextStyle(
@@ -720,6 +657,7 @@ class _LegendItem extends StatelessWidget {
             color: color,
           ),
         ),
+        */
       ],
     );
   }

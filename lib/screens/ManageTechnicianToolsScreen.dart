@@ -3,12 +3,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-//import 'dart:io';
-//import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:signature/signature.dart';
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
-
   const ManageTechnicianToolsScreen({super.key, this.technician});
 
   @override
@@ -18,32 +19,74 @@ class ManageTechnicianToolsScreen extends StatefulWidget {
 
 class _ManageTechnicianToolsScreenState
     extends State<ManageTechnicianToolsScreen> {
-  final _supabase = Supabase.instance.client;
+  late ScrollController _scrollController;
+  bool _showScrollToTop = false;
 
-  String? _scannedCode;
-  //MobileScannerController? _scannerController;
+  final _supabase = Supabase.instance.client;
+  final ImagePicker _picker = ImagePicker();
+
+  File? _imageFile;
 
   List<Map<String, dynamic>> _tools = [];
   bool _loading = true;
   bool _saving = false;
   bool _hasChanges = false;
 
-  final ImagePicker _picker = ImagePicker();
+  //final Map<String, bool> _expandedCategories = {};
+  Map<String, bool> _expandedCategories = {};
+  List<String> _categories = [];
 
-  // Track which categories are expanded
-  final Map<String, bool> _expandedCategories = {
-    /*
-    'PPE': false,
-    'GPON Tools': false,
-    'Common Tools': false,
-    'Additional Tools': false,
-    */
-  };
-
+  final SignatureController _signatureController = SignatureController(
+    penStrokeWidth: 2,
+    penColor: Colors.black,
+    exportBackgroundColor: Colors.white,
+  );
   @override
   void initState() {
     super.initState();
     _fetchTechnicianTools();
+    _fetchCategories();
+    _scrollController = ScrollController();
+    _refreshTechnicianData();
+
+    _scrollController.addListener(() {
+      if (_scrollController.offset > 200 && !_showScrollToTop) {
+        setState(() => _showScrollToTop = true);
+      } else if (_scrollController.offset <= 200 && _showScrollToTop) {
+        setState(() => _showScrollToTop = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _signatureController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('categories')
+          .select('name')
+          .order('id', ascending: true);
+
+      final fetched = data
+          .map<String>((item) => item['name'] as String)
+          .toList();
+
+      setState(() {
+        _categories = fetched;
+
+        // initialize expanded map if new categories appear
+        for (final cat in _categories) {
+          _expandedCategories.putIfAbsent(cat, () => true);
+        }
+      });
+    } catch (e) {
+      print("Error fetching categories: $e");
+    }
   }
 
   Future<void> _fetchTechnicianTools() async {
@@ -57,18 +100,15 @@ class _ManageTechnicianToolsScreenState
     }
 
     try {
-      // Fetch all available tools
       final allTools = await _supabase
           .from('tools')
           .select('tools_id, name, category');
 
-      // Fetch only the technician's assigned tools with their status
       final assignedTools = await _supabase
           .from('technician_tools')
           .select('tools_id, status')
           .eq('technician_id', technicianId);
 
-      // Combine both lists
       final combined = allTools.map<Map<String, dynamic>>((tool) {
         final match = assignedTools.firstWhere(
           (a) => a['tools_id'] == tool['tools_id'],
@@ -88,7 +128,6 @@ class _ManageTechnicianToolsScreenState
         _tools = combined;
         _hasChanges = false;
 
-        // dynamic categories - default collapsed
         final categories = combined.map((t) => t['category'] as String).toSet();
         _expandedCategories.clear();
         for (var c in categories) {
@@ -109,14 +148,12 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  /// Save all changes to the database
   Future<void> _saveChanges() async {
     final technicianId = widget.technician?['id'];
     if (technicianId == null || _saving) return;
     setState(() => _saving = true);
 
     try {
-      // Find tools where the status was changed
       final changedTools = _tools.where((tool) {
         return tool['status'] != tool['original_status'];
       }).toList();
@@ -133,7 +170,6 @@ class _ManageTechnicianToolsScreenState
         return;
       }
 
-      // Prepare updated data for Supabase
       final updates = changedTools.map((tool) {
         return {
           'technician_id': technicianId,
@@ -145,7 +181,6 @@ class _ManageTechnicianToolsScreenState
 
       await _supabase.from('technician_tools').upsert(updates);
 
-      // Update local copies
       for (var tool in _tools) {
         tool['original_status'] = tool['status'];
       }
@@ -153,13 +188,12 @@ class _ManageTechnicianToolsScreenState
       if (!mounted) return;
       setState(() => _hasChanges = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Saved ${changedTools.length} changes'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
+      Fluttertoast.showToast(
+        msg: "Saved ${changedTools.length} changes",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
       );
     } catch (e) {
       debugPrint('❌ Error saving changes: $e');
@@ -176,9 +210,9 @@ class _ManageTechnicianToolsScreenState
         setState(() => _saving = false);
       }
     }
+  
   }
 
-  /// Check if there are unsaved changes
   void _checkForChanges() {
     final hasChanges = _tools.any((tool) {
       return tool['status'] != tool['original_status'];
@@ -189,81 +223,355 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  /// Get category icon
-  IconData _getCategoryIcon(String category) {
+  IconData? _getCategoryIcon(String category) {
     switch (category) {
       case 'PPE':
         return Icons.security;
       case 'GPON Tools':
-        return Icons.settings_input_antenna;
+        return Icons.settings_input_antenna;  
       case 'Common Tools':
         return Icons.build;
       case 'Additional Tools':
         return Icons.construction;
+      case 'Vehicle Requirements':
+        return Icons.car_rental;
+      case 'Technician Requirements':
+        return Icons.engineering;
       default:
-        return Icons.category;
+        return null;
     }
   }
 
-  /// Open camera to capture image
-  Future<void> _openCamera() async {
-    try {
-      final pickedFile = await _picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 85,
+  Future<void> _takePicture() async {
+    final pickedFile = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 80,
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Photo captured'),
+          backgroundColor: Color(0xFF003E70), //blue
+          duration: Duration(seconds: 2),
+        ),
       );
-
-      if (pickedFile != null) {
-        setState(() {});
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Photo captured successfully!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Error capturing image: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error capturing photo: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
-  /// Build tools by category with dropdown
-  Widget _buildCategoryTools(String category) {
-    final filteredTools =
-        _tools.where((tool) => tool['category'] == category).toList()..sort(
-          (a, b) => (a['name'] as String).toLowerCase().compareTo(
-            (b['name'] as String).toLowerCase(),
-          ),
-        );
+  Future<void> _sharePhoto() async {
+    if (_imageFile == null) return;
 
+    try {
+      final technicianName = widget.technician?['name'] ?? "Technician";
+
+      await Share.shareXFiles([
+        XFile(_imageFile!.path),
+      ], text: "$technicianName Photo");
+    } catch (e) {
+      debugPrint('❌ Error sharing photo: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error sharing photo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<bool> saveSignature({
+    required String technicianId,
+    required File imageFile,
+  }) async {
+    final supabase = Supabase.instance.client;
+
+    // 🔍 DEBUG: Check authentication
+    final user = supabase.auth.currentUser;
+    debugPrint("Current user: ${user?.id}");
+    debugPrint("User role: ${user?.role}");
+
+    if (user == null) {
+      debugPrint("❌ User not authenticated!");
+      return false;
+    }
+
+    try {
+      final fileName =
+          "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
+
+      final bytes = await imageFile.readAsBytes();
+
+      debugPrint("📤 Uploading to bucket: technician_signatures");
+      debugPrint("📄 Filename: $fileName");
+
+      await supabase.storage
+          .from('technician_signatures')
+          .uploadBinary(fileName, bytes);
+
+      final publicUrl = supabase.storage
+          .from('technician_signatures')
+          .getPublicUrl(fileName);
+
+      await supabase
+          .from('technicians')
+          .update({'e_signature': publicUrl})
+          .eq('id', technicianId);
+
+      return true;
+    } catch (e) {
+      debugPrint("❌ Error saving e-signature: $e");
+      return false;
+    }
+  }
+
+  Future<void> _openSignaturePad() async {
+    _signatureController.clear();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        bool isSaving = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Sign Here'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: Signature(
+                  controller: _signatureController,
+                  backgroundColor: Colors.grey[200]!,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (_signatureController.isEmpty) {
+                            Fluttertoast.showToast(msg: "Please sign first");
+                            return;
+                          }
+
+                          setDialogState(() => isSaving = true);
+
+                          try {
+                            final technicianId = widget.technician?['id'];
+
+                            if (technicianId == null) {
+                              Fluttertoast.showToast(
+                                msg: "Technician ID missing!",
+                              );
+                              setDialogState(() => isSaving = false);
+                              return;
+                            }
+
+                            // Get signature PNG bytes
+                            final sigBytes = await _signatureController
+                                .toPngBytes();
+                            if (sigBytes == null) {
+                              Fluttertoast.showToast(
+                                msg: "Failed to capture signature.",
+                              );
+                              setDialogState(() => isSaving = false);
+                              return;
+                            }
+
+                            final fileName =
+                                "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
+
+                            // Upload to Supabase Storage
+                            await _supabase.storage
+                                .from('technician_signatures')
+                                .uploadBinary(fileName, sigBytes);
+
+                            // Get public URL
+                            final publicUrl = _supabase.storage
+                                .from('technician_signatures')
+                                .getPublicUrl(fileName);
+
+                            print("✅ Signature uploaded: $publicUrl");
+
+                            // Save URL to technicians table
+                            await _supabase
+                                .from('technicians')
+                                .update({'e_signature': publicUrl})
+                                .eq('id', technicianId);
+
+                            print("✅ Signature URL saved to database");
+
+                            // Close dialog first
+                            Navigator.pop(context);
+
+                            // ✅ Update local technician data and refresh UI
+                            setState(() {
+                              widget.technician?['e_signature'] = publicUrl;
+                            });
+
+                            print(
+                              "✅ UI updated with signature: ${widget.technician?['e_signature']}",
+                            );
+
+                            Fluttertoast.showToast(
+                              msg: "Signature saved successfully!",
+                              backgroundColor: Colors.green,
+                            );
+                          } catch (e) {
+                            Fluttertoast.showToast(
+                              msg: "Error saving signature: $e",
+                              backgroundColor: Colors.red,
+                            );
+                            print("❌ Error: $e");
+                            setDialogState(() => isSaving = false);
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF003E70),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _refreshTechnicianData() async {
+    final technicianId = widget.technician?['id'];
+    if (technicianId == null) return;
+
+    try {
+      final data = await _supabase
+          .from('technicians')
+          .select('id, name, e_signature')
+          .eq('id', technicianId)
+          .single();
+
+      setState(() {
+        widget.technician?['e_signature'] = data['e_signature'];
+      });
+    } catch (e) {
+      print("Error refreshing technician data: $e");
+    }
+  }
+
+  //Widgets Section
+  Widget _buildToolsList() {
+    if (_tools.isEmpty) {
+      return const Center(child: Text('No results found'));
+    }
+
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(16),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Tools & Requirements',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                final allExpanded =
+                    _expandedCategories.values.isNotEmpty &&
+                    _expandedCategories.values.every((e) => e);
+
+                setState(() {
+                  _expandedCategories.updateAll((key, value) => !allExpanded);
+                });
+              },
+              icon: Icon(
+                _expandedCategories.values.isNotEmpty &&
+                        _expandedCategories.values.every((e) => e)
+                    ? Icons.unfold_less
+                    : Icons.unfold_more,
+              ),
+              label: Text(
+                _expandedCategories.values.isNotEmpty &&
+                        _expandedCategories.values.every((e) => e)
+                    ? 'Collapse All'
+                    : 'Expand All',
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        // 🔥 Dynamically display ALL categories from Supabase
+        ..._categories.map((cat) => _buildCategoryTools(cat)).toList(),
+
+        const SizedBox(height: 5),
+
+        if (_imageFile != null) _buildCapturedPhoto(),
+        // Only show signature if it exists AND changes have been saved
+        if (widget.technician?['e_signature'] != null && !_hasChanges)
+          _showSignature(),
+
+        const SizedBox(height: 80),
+      ],
+    );
+  }
+
+  Widget _buildCategoryTools(String category) {
+    final iconData = _getCategoryIcon(category);
+
+    // Filter tools that belong to this category
+    final filteredTools =
+        _tools
+            .where(
+              (tool) =>
+                  (tool['category'] ?? '').toString().trim().toLowerCase() ==
+                  category.trim().toLowerCase(),
+            )
+            .toList()
+          ..sort((a, b) {
+            final idA = int.tryParse(a['tools_id'].toString()) ?? 0;
+            final idB = int.tryParse(b['tools_id'].toString()) ?? 0;
+            return idA.compareTo(idB);
+          });
+
+    // If no tool belongs to this category, don't display the card
     if (filteredTools.isEmpty) {
       return const SizedBox.shrink();
     }
 
+    // Check if category is expanded
     final isExpanded = _expandedCategories[category] ?? false;
-    //final toolCount = filteredTools.length;
-    //final okCount = filteredTools.where((t) => t['status'] == 'OK').length;
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 2,
       child: Column(
         children: [
-          // Dropdown header
+          // CATEGORY HEADER
           InkWell(
             onTap: () {
               setState(() {
@@ -273,7 +581,7 @@ class _ManageTechnicianToolsScreenState
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color.fromARGB(255, 0, 62, 112),
+                color: const Color(0xFF003E70),
                 borderRadius: isExpanded
                     ? const BorderRadius.only(
                         topLeft: Radius.circular(4),
@@ -283,25 +591,19 @@ class _ManageTechnicianToolsScreenState
               ),
               child: Row(
                 children: [
-                  Icon(
-                    _getCategoryIcon(category),
-                    color: Colors.white,
-                    size: 24,
-                  ),
+                  iconData != null
+                      ? Icon(iconData, color: Colors.white, size: 24)
+                      : const SizedBox.shrink(), // disappears if null
+
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          category,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      category,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                   Icon(
@@ -313,61 +615,44 @@ class _ManageTechnicianToolsScreenState
               ),
             ),
           ),
+
           if (isExpanded) ...[
-            // Column Headers
+            // TABLE HEADER
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border(
-                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
-                ),
-              ),
+              color: Colors.grey.shade100,
               child: Row(
                 children: [
                   const Expanded(
                     flex: 3,
                     child: Text(
                       'Tool Name',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Expanded(
                     flex: 4,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: const [
                         Text(
                           'Onhand',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        Spacer(),
                         Text(
                           'None',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        Spacer(),
                         Text(
                           'Missing',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        Spacer(),
                         Text(
                           'Defective',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -376,7 +661,7 @@ class _ManageTechnicianToolsScreenState
               ),
             ),
 
-            // Tool rows
+            // TOOL ITEMS
             ...filteredTools.map((tool) {
               final currentStatus = tool['status'] ?? 'None';
               final hasChanged = tool['status'] != tool['original_status'];
@@ -394,93 +679,25 @@ class _ManageTechnicianToolsScreenState
                 ),
                 child: Row(
                   children: [
-                    // Tool name
                     Expanded(
                       flex: 3,
                       child: Text(
-                        tool['name'] ?? 'Unnamed tool',
+                        tool['name'] ?? '',
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Expanded(
                       flex: 4,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          // Onhand
-                          Checkbox(
-                            value: tool['status'] == 'Onhand',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      tool['status'] = value == true
-                                          ? 'Onhand'
-                                          : 'None';
-                                      print(
-                                        "Tool ${tool['tools_id']} set to ${tool['status']}",
-                                      );
-                                    });
-                                    _checkForChanges();
-                                  },
-                            activeColor: Colors.green,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-
-                          // None
-                          Checkbox(
-                            value: currentStatus == 'None',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == true) {
-                                      setState(() {
-                                        tool['status'] = 'None';
-                                      });
-                                      _checkForChanges();
-                                    }
-                                  },
-                            activeColor: Colors.grey,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-
-                          // Missing
-                          Checkbox(
-                            value: currentStatus == 'Missing',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == true) {
-                                      setState(() {
-                                        tool['status'] = 'Missing';
-                                      });
-                                      _checkForChanges();
-                                    }
-                                  },
-                            activeColor: Colors.orange,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-
-                          // Defective
-                          Checkbox(
-                            value: currentStatus == 'Defective',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == true) {
-                                      setState(() {
-                                        tool['status'] = 'Defective';
-                                      });
-                                      _checkForChanges();
-                                    }
-                                  },
-                            activeColor: Colors.red,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
+                          _buildStatusCheckbox(tool, 'Onhand', currentStatus),
+                          _buildStatusCheckbox(tool, 'None', currentStatus),
+                          _buildStatusCheckbox(tool, 'Missing', currentStatus),
+                          _buildStatusCheckbox(
+                            tool,
+                            'Defective',
+                            currentStatus,
                           ),
                         ],
                       ),
@@ -495,250 +712,205 @@ class _ManageTechnicianToolsScreenState
     );
   }
 
-  /// Build the list of tools organized by category
-  Widget _buildToolsList() {
-    if (_tools.isEmpty) {
-      return const Center(child: Text('No tools found'));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        /*
-        // Scanner Section
-        Card(
-          elevation: 3,
-          margin: const EdgeInsets.only(bottom: 20),
-          child: InkWell(
-            onTap: _showScanner,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(255, 0, 62, 112),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-
-                    child: const Icon(
-                      Icons.qr_code_scanner,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Scan QR Code',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _scannedCode != null
-                              ? 'Last scan: $_scannedCode'
-                              : 'Tap to scan',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _scannedCode != null
-                                ? Colors.green
-                                : Colors.grey.shade600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  Icon(
-                    _scannedCode != null
-                        ? Icons.check_circle
-                        : Icons.arrow_forward_ios,
-                    color: _scannedCode != null
-                        ? Colors.green
-                        : Colors.grey.shade400,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        */
-        // Tools Onhand Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'All tools',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            TextButton.icon(
-              onPressed: () {
-                final allExpanded = _expandedCategories.values.every((e) => e);
-                setState(() {
-                  _expandedCategories.updateAll((key, value) => !allExpanded);
-                });
-              },
-              icon: Icon(
-                _expandedCategories.values.every((e) => e)
-                    ? Icons.unfold_less
-                    : Icons.unfold_more,
-              ),
-              label: Text(
-                _expandedCategories.values.every((e) => e)
-                    ? 'Collapse All'
-                    : 'Expand All',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildCategoryTools('PPE'),
-        _buildCategoryTools('GPON Tools'),
-        _buildCategoryTools('Common Tools'),
-        _buildCategoryTools('Additional Tools'),
-        const SizedBox(height: 80), // Space for FAB
-      ],
+  Widget _buildStatusCheckbox(Map tool, String status, String currentStatus) {
+    return Checkbox(
+      value: currentStatus == status,
+      onChanged: _saving
+          ? null
+          : (value) {
+              if (value == true) {
+                setState(() => tool['status'] = status);
+                _checkForChanges();
+              }
+            },
+      activeColor: {
+        'Onhand': Colors.green,
+        'None': Colors.grey,
+        'Missing': Colors.orange,
+        'Defective': Colors.red,
+      }[status],
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
-  /// Show QR/Barcode scanner
-  Future<void> _showScanner() async {
-    /*
-    final scannerController = MobileScannerController();
-    bool scanned = false;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.8,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
+  Widget _buildCapturedPhoto() {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color.fromARGB(255, 0, 62, 112),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(4),
               ),
-              child: Column(
-                children: [
-                  // Header
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: const BoxDecoration(
-                      color: Color.fromARGB(255, 0, 62, 112),
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        topRight: Radius.circular(20),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.qr_code_scanner, color: Colors.white),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Scan QR Code',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
-                          onPressed: () async {
-                            // 👇 Stop camera before closing
-                            await scannerController.stop();
-                            await scannerController.dispose();
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.photo_camera, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Captured Photo',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share, color: Colors.white, size: 20),
+                  onPressed: _sharePhoto,
+                  tooltip: 'Share/Download Photo',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  onPressed: () {
+                    setState(() {
+                      _imageFile = null;
+                    });
+                  },
+                  tooltip: 'Remove Photo',
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                _imageFile!,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                  // Scanner View
-                  Expanded(
-                    child: MobileScanner(
-                      controller: scannerController,
-                      onDetect: (capture) async {
-                        if (scanned) return;
-                        scanned = true;
+  //Widget _buildSignatureCard() {
+  Widget _showSignature() {
+    final signatureUrl = widget.technician?['e_signature'];
 
-                        for (final barcode in capture.barcodes) {
-                          final code = barcode.rawValue;
-                          if (code != null) {
-                            setState(() => _scannedCode = code);
-
-                            // 👇 Stop the scanner before closing modal
-                            await scannerController.stop();
-                            await scannerController.dispose();
-
-                            Navigator.pop(context);
-
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Scanned: $code'),
-                                backgroundColor: Colors.green,
-                                duration: const Duration(seconds: 3),
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: const Color(0xFF003E70),
+            child: Row(
+              children: [
+                const Icon(Icons.edit, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    //'E-signature $technicianName',
+                    'E-signature',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                if (signatureUrl != null)
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    onPressed: _openSignaturePad,
+                    tooltip: 'Update Signature',
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: signatureUrl != null
+                ? Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          signatureUrl,
+                          height: 150,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              height: 150,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: CircularProgressIndicator(),
                               ),
                             );
-                            break;
-                          }
-                        }
-                      },
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 150,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Text('Failed to load signature'),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Signature saved',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  )
+                : Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'No signature yet',
+                        style: TextStyle(color: Colors.grey),
+                      ),
                     ),
                   ),
-
-                  // Instructions
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.qr_code_2,
-                          size: 48,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Position the QR code or barcode within the frame',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
+          ),
+          if (signatureUrl == null)
+            Padding(
+              padding: const EdgeInsets.only(right: 16, bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _openSignaturePad,
+                    icon: const Icon(Icons.draw),
+                    label: const Text('Add Signature'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF003E70),
+                      foregroundColor: Colors.white,
                     ),
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ),
+        ],
+      ),
     );
-
-    // Just in case user swipes down to close the sheet
-    await scannerController.stop();
-    await scannerController.dispose();
-    */
   }
 
   @override
@@ -746,15 +918,54 @@ class _ManageTechnicianToolsScreenState
     final technicianName = widget.technician?['name'] ?? 'Technician';
 
     return Scaffold(
-      appBar: AppBar(title: Text("$technicianName's Tools")),
+      appBar: AppBar(title: Text("$technicianName's tools")),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _fetchTechnicianTools,
               child: _buildToolsList(),
             ),
-      floatingActionButton: _hasChanges
-          ? FloatingActionButton.extended(
+
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (_showScrollToTop) ...[
+            FloatingActionButton(
+              heroTag: 'scrollUp',
+              mini: true,
+              onPressed: () {
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOut,
+                );
+              },
+              backgroundColor: Colors.grey.shade900,
+              child: const Icon(Icons.arrow_upward, color: Colors.white),
+            ),
+            const SizedBox(height: 5),
+          ],
+
+          // Hide camera when _hasChanges = true
+          if (!_hasChanges) ...[
+            FloatingActionButton(
+              heroTag: 'camera',
+              onPressed: _takePicture,
+              backgroundColor: const Color(0xFF003E70),
+              child: const Icon(Icons.camera_alt, color: Colors.white),
+            ),
+            SizedBox(height: 5),
+            FloatingActionButton(
+              heroTag: 'signature',
+              onPressed: _openSignaturePad,
+              backgroundColor: const Color(0xFF003E70),
+              child: const Icon(Icons.edit, color: Colors.white),
+            ),
+          ],
+          if (_hasChanges) ...[
+            const SizedBox(height: 16),
+            FloatingActionButton.extended(
+              heroTag: 'save',
               onPressed: _saving ? null : _saveChanges,
               icon: _saving
                   ? const SizedBox(
@@ -768,11 +979,25 @@ class _ManageTechnicianToolsScreenState
                   : const Icon(Icons.save, color: Colors.white),
               label: Text(
                 _saving ? 'Saving...' : 'Save Changes',
-                style: TextStyle(color: Colors.white),
+                style: const TextStyle(color: Colors.white),
               ),
               backgroundColor: const Color(0xFF003E70),
-            )
-          : null,
+            ),
+          ],
+          /*
+          Signature(
+            controller: _signatureController,
+            height: 200,
+            backgroundColor: Colors.grey[200]!,
+          ),
+          ElevatedButton(
+            onPressed: _saveSignature,
+            child: const Text('Save Signature'),
+          ),
+          */
+        ],
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

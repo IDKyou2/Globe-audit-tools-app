@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tools_audit_app/screens/ExportExcelPage.dart';
@@ -60,7 +62,8 @@ Future<void> main() async {
       ),
       GoRoute(
         path: '/export-excel',
-        builder: (context, state) => const ExportExcelPage(),
+        //builder: (context, state) => const ExportExcelPage(),
+        builder: (context, state) => const ExportOptionsPage(),
       ),
       GoRoute(
         path: '/signup',
@@ -105,7 +108,7 @@ class _MyAppState extends State<MyApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,
-        primaryColor: const Color(0xFF003E70),
+        primaryColor: const Color(0xFF003E70), //blue
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF003E70),
           brightness: Brightness.light,

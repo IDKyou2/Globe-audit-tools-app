@@ -1,3 +1,5 @@
+// ignore_for_file: file_names, library_private_types_in_public_api
+
 import 'package:bcrypt/bcrypt.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -26,6 +28,19 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadSavedCredentials();
+
+    // Listen for auth changes (manual login or Google OAuth)
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final session = data.session;
+
+      if (session != null) {
+        // user logged in successfully
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userId', session.user.id);
+
+        if (mounted) context.go('/dashboard');
+      }
+    });
   }
 
   @override
@@ -34,6 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
+
 
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
@@ -166,7 +182,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
       body: Container(
@@ -304,7 +319,49 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      /*
+                      Row(
+                        children: const [
+                          Expanded(child: Divider()),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text("OR"),
+                          ),
+                          Expanded(child: Divider()),
+                        ],
+                      ),
                       const SizedBox(height: 16),
+                   
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            side: BorderSide(color: Color(0xFF003E70)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: _loginWithGoogle,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.login, color: Color(0xFF003E70)),
+                              SizedBox(width: 8),
+                              Text(
+                                "Continue with Google",
+                                style: TextStyle(
+                                  color: Color(0xFF003E70),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      */
 
                       // Signup
                       GestureDetector(
