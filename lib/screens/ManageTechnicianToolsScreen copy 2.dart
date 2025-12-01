@@ -1,9 +1,12 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:signature/signature.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
@@ -28,12 +31,22 @@ class _ManageTechnicianToolsScreenState
   bool _saving = false;
   bool _hasChanges = false;
 
-  final Map<String, bool> _expandedCategories = {};
+  //final Map<String, bool> _expandedCategories = {};
+  Map<String, bool> _expandedCategories = {};
+  List<String> _categories = [];
+
+  final SignatureController _signatureController = SignatureController(
+    penStrokeWidth: 2,
+    penColor: Colors.black,
+    exportBackgroundColor: Colors.white,
+  );
+  File? _signatureFile;
 
   @override
   void initState() {
     super.initState();
     _fetchTechnicianTools();
+    _fetchCategories();
     _scrollController = ScrollController();
 
     _scrollController.addListener(() {
@@ -47,8 +60,33 @@ class _ManageTechnicianToolsScreenState
 
   @override
   void dispose() {
+    _signatureController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('categories')
+          .select('name')
+          .order('id', ascending: true);
+
+      final fetched = data
+          .map<String>((item) => item['name'] as String)
+          .toList();
+
+      setState(() {
+        _categories = fetched;
+
+        // initialize expanded map if new categories appear
+        for (final cat in _categories) {
+          _expandedCategories.putIfAbsent(cat, () => true);
+        }
+      });
+    } catch (e) {
+      print("Error fetching categories: $e");
+    }
   }
 
   Future<void> _fetchTechnicianTools() async {
@@ -195,7 +233,7 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  IconData _getCategoryIcon(String category) {
+  IconData? _getCategoryIcon(String category) {
     switch (category) {
       case 'PPE':
         return Icons.security;
@@ -205,8 +243,10 @@ class _ManageTechnicianToolsScreenState
         return Icons.build;
       case 'Additional Tools':
         return Icons.construction;
+      case 'Vehicle':
+        return Icons.car_rental;
       default:
-        return Icons.category;
+        return null;
     }
   }
 
@@ -255,25 +295,201 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  Widget _buildCategoryTools(String category) {
-    final filteredTools =
-        _tools.where((tool) => tool['category'] == category).toList()..sort(
-          (a, b) => (a['name'] as String).toLowerCase().compareTo(
-            (b['name'] as String).toLowerCase(),
-          ),
-        );
+  Future<void> _saveSignature() async {
+    if (_signatureController.isEmpty) {
+      Fluttertoast.showToast(msg: "Please sign first");
+      return;
+    }
 
+    try {
+      final signatureBytes = await _signatureController.toPngBytes();
+      if (signatureBytes == null) return;
+
+      final dir = await getTemporaryDirectory();
+      // Use timestamp to force refresh
+      final file = File(
+        '${dir.path}/signature_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await file.writeAsBytes(signatureBytes);
+
+      setState(() {
+        _signatureFile = file; // store for display
+      });
+
+      Fluttertoast.showToast(msg: "Signature saved successfully");
+    } catch (e) {
+      Fluttertoast.showToast(msg: "Error saving signature: $e");
+    }
+  }
+
+  Future<void> _shareSignature() async {
+    if (_signatureFile == null) return;
+
+    try {
+      await Share.shareXFiles([
+        XFile(_signatureFile!.path),
+      ], text: "${widget.technician?['name'] ?? 'Technician'} Signature");
+    } catch (e) {
+      Fluttertoast.showToast(msg: "Error sharing signature: $e");
+    }
+  }
+
+  Future<void> _openSignaturePad() async {
+    _signatureController.clear();
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        bool isSharing = false;
+        return AlertDialog(
+          title: const Text('Sign Here'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300, // Bigger signature pad
+            child: Signature(
+              controller: _signatureController,
+              backgroundColor: Colors.grey[200]!,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isSharing
+                  ? null
+                  : () async {
+                      if (_signatureController.isEmpty) {
+                        Fluttertoast.showToast(msg: "Please sign first");
+                        return;
+                      }
+
+                      isSharing = true;
+
+                      // Get signature bytes
+                      final sigBytes = await _signatureController.toPngBytes();
+                      if (sigBytes == null) return;
+
+                      final technicianName =
+                          widget.technician?['name'] ?? 'Technician';
+
+                      // Sanitize name for filename
+                      final safeName = technicianName.replaceAll(
+                        RegExp(r'\s+'),
+                        '_',
+                      );
+
+                      // Share image directly without adding text
+                      final tempFile = XFile.fromData(
+                        sigBytes,
+                        mimeType: 'image/png',
+                        name: 'signature_$safeName.png',
+                      );
+
+                      await Share.shareXFiles([
+                        tempFile,
+                      ], text: "$technicianName's_E-signature");
+
+                      Navigator.pop(context);
+                    },
+              child: const Text('Share'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  //Widgets Section
+  Widget _buildToolsList() {
+    if (_tools.isEmpty) {
+      return const Center(child: Text('No results found'));
+    }
+
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(16),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Tools & Requirements',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                final allExpanded =
+                    _expandedCategories.values.isNotEmpty &&
+                    _expandedCategories.values.every((e) => e);
+
+                setState(() {
+                  _expandedCategories.updateAll((key, value) => !allExpanded);
+                });
+              },
+              icon: Icon(
+                _expandedCategories.values.isNotEmpty &&
+                        _expandedCategories.values.every((e) => e)
+                    ? Icons.unfold_less
+                    : Icons.unfold_more,
+              ),
+              label: Text(
+                _expandedCategories.values.isNotEmpty &&
+                        _expandedCategories.values.every((e) => e)
+                    ? 'Collapse All'
+                    : 'Expand All',
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // 🔥 Dynamically display ALL categories from Supabase
+        ..._categories.map((cat) => _buildCategoryTools(cat)).toList(),
+
+        const SizedBox(height: 24),
+
+        if (_imageFile != null) _buildCapturedPhoto(),
+        if (_signatureFile != null) _buildCapturedSignature(),
+        const SizedBox(height: 80),
+      ],
+    );
+  }
+
+  Widget _buildCategoryTools(String category) {
+    final iconData = _getCategoryIcon(category);
+
+    // Filter tools that belong to this category
+    final filteredTools =
+        _tools
+            .where(
+              (tool) =>
+                  (tool['category'] ?? '').toString().trim().toLowerCase() ==
+                  category.trim().toLowerCase(),
+            )
+            .toList()
+          ..sort((a, b) {
+            final idA = int.tryParse(a['tools_id'].toString()) ?? 0;
+            final idB = int.tryParse(b['tools_id'].toString()) ?? 0;
+            return idA.compareTo(idB);
+          });
+
+    // If no tool belongs to this category, don't display the card
     if (filteredTools.isEmpty) {
       return const SizedBox.shrink();
     }
 
+    // Check if category is expanded
     final isExpanded = _expandedCategories[category] ?? false;
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 2,
       child: Column(
         children: [
+          // CATEGORY HEADER
           InkWell(
             onTap: () {
               setState(() {
@@ -283,7 +499,7 @@ class _ManageTechnicianToolsScreenState
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color.fromARGB(255, 0, 62, 112),
+                color: const Color(0xFF003E70),
                 borderRadius: isExpanded
                     ? const BorderRadius.only(
                         topLeft: Radius.circular(4),
@@ -293,11 +509,10 @@ class _ManageTechnicianToolsScreenState
               ),
               child: Row(
                 children: [
-                  Icon(
-                    _getCategoryIcon(category),
-                    color: Colors.white,
-                    size: 24,
-                  ),
+                  iconData != null
+                      ? Icon(iconData, color: Colors.white, size: 24)
+                      : const SizedBox.shrink(), // disappears if null
+
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -318,60 +533,44 @@ class _ManageTechnicianToolsScreenState
               ),
             ),
           ),
+
           if (isExpanded) ...[
+            // TABLE HEADER
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                border: Border(
-                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
-                ),
-              ),
+              color: Colors.grey.shade100,
               child: Row(
                 children: [
                   const Expanded(
                     flex: 3,
                     child: Text(
                       'Tool Name',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Expanded(
                     flex: 4,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: const [
                         Text(
                           'Onhand',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        Spacer(),
                         Text(
                           'None',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        Spacer(),
                         Text(
                           'Missing',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        Spacer(),
                         Text(
                           'Defective',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -379,6 +578,8 @@ class _ManageTechnicianToolsScreenState
                 ],
               ),
             ),
+
+            // TOOL ITEMS
             ...filteredTools.map((tool) {
               final currentStatus = tool['status'] ?? 'None';
               final hasChanged = tool['status'] != tool['original_status'];
@@ -399,79 +600,22 @@ class _ManageTechnicianToolsScreenState
                     Expanded(
                       flex: 3,
                       child: Text(
-                        tool['name'] ?? 'Unnamed tool',
+                        tool['name'] ?? '',
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Expanded(
                       flex: 4,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          Checkbox(
-                            value: tool['status'] == 'Onhand',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      tool['status'] = value == true
-                                          ? 'Onhand'
-                                          : 'None';
-                                    });
-                                    _checkForChanges();
-                                  },
-                            activeColor: Colors.green,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          Checkbox(
-                            value: currentStatus == 'None',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == true) {
-                                      setState(() {
-                                        tool['status'] = 'None';
-                                      });
-                                      _checkForChanges();
-                                    }
-                                  },
-                            activeColor: Colors.grey,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          Checkbox(
-                            value: currentStatus == 'Missing',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == true) {
-                                      setState(() {
-                                        tool['status'] = 'Missing';
-                                      });
-                                      _checkForChanges();
-                                    }
-                                  },
-                            activeColor: Colors.orange,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          Checkbox(
-                            value: currentStatus == 'Defective',
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == true) {
-                                      setState(() {
-                                        tool['status'] = 'Defective';
-                                      });
-                                      _checkForChanges();
-                                    }
-                                  },
-                            activeColor: Colors.red,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
+                          _buildStatusCheckbox(tool, 'Onhand', currentStatus),
+                          _buildStatusCheckbox(tool, 'None', currentStatus),
+                          _buildStatusCheckbox(tool, 'Missing', currentStatus),
+                          _buildStatusCheckbox(
+                            tool,
+                            'Defective',
+                            currentStatus,
                           ),
                         ],
                       ),
@@ -486,51 +630,24 @@ class _ManageTechnicianToolsScreenState
     );
   }
 
-  Widget _buildToolsList() {
-    if (_tools.isEmpty) {
-      return const Center(child: Text('No results found'));
-    }
-
-    return ListView(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'All tools',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            TextButton.icon(
-              onPressed: () {
-                final allExpanded = _expandedCategories.values.every((e) => e);
-                setState(() {
-                  _expandedCategories.updateAll((key, value) => !allExpanded);
-                });
-              },
-              icon: Icon(
-                _expandedCategories.values.every((e) => e)
-                    ? Icons.unfold_less
-                    : Icons.unfold_more,
-              ),
-              label: Text(
-                _expandedCategories.values.every((e) => e)
-                    ? 'Collapse All'
-                    : 'Expand All',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _buildCategoryTools('PPE'),
-        _buildCategoryTools('GPON Tools'),
-        _buildCategoryTools('Common Tools'),
-        _buildCategoryTools('Additional Tools'),
-        const SizedBox(height: 24),
-        if (_imageFile != null) _buildCapturedPhoto(),
-        const SizedBox(height: 80),
-      ],
+  Widget _buildStatusCheckbox(Map tool, String status, String currentStatus) {
+    return Checkbox(
+      value: currentStatus == status,
+      onChanged: _saving
+          ? null
+          : (value) {
+              if (value == true) {
+                setState(() => tool['status'] = status);
+                _checkForChanges();
+              }
+            },
+      activeColor: {
+        'Onhand': Colors.green,
+        'None': Colors.grey,
+        'Missing': Colors.orange,
+        'Defective': Colors.red,
+      }[status],
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
@@ -597,6 +714,119 @@ class _ManageTechnicianToolsScreenState
     );
   }
 
+  // Widget for signature
+  Widget _buildSignatureCard() {
+    final technicianName = widget.technician?['name'] ?? 'Technician';
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: const Color(0xFF003E70),
+            child: Text(
+              'Signature for $technicianName',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Signature(
+              controller: _signatureController,
+              height: 150,
+              backgroundColor: Colors.grey[200]!,
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () {
+                  _signatureController.clear();
+                },
+                child: const Text('Clear'),
+              ),
+              ElevatedButton(
+                onPressed: _saveSignature,
+                child: const Text('Save'),
+              ),
+              const SizedBox(width: 16),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCapturedSignature() {
+    if (_signatureFile == null) return const SizedBox.shrink();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF003E70),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(4),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.edit, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Signature',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share, color: Colors.white, size: 20),
+                  onPressed: _shareSignature,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  onPressed: () {
+                    setState(() => _signatureFile = null);
+                  },
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                _signatureFile!,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                key: ValueKey(_signatureFile!.path), // forces refresh
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final technicianName = widget.technician?['name'] ?? 'Technician';
@@ -638,6 +868,13 @@ class _ManageTechnicianToolsScreenState
               backgroundColor: const Color(0xFF003E70),
               child: const Icon(Icons.camera_alt, color: Colors.white),
             ),
+            SizedBox(height: 5),
+            FloatingActionButton(
+              heroTag: 'signature',
+              onPressed: _openSignaturePad,
+              backgroundColor: const Color(0xFF003E70),
+              child: const Icon(Icons.edit, color: Colors.white),
+            ),
           ],
 
           if (_hasChanges) ...[
@@ -662,6 +899,17 @@ class _ManageTechnicianToolsScreenState
               backgroundColor: const Color(0xFF003E70),
             ),
           ],
+          /*
+          Signature(
+            controller: _signatureController,
+            height: 200,
+            backgroundColor: Colors.grey[200]!,
+          ),
+          ElevatedButton(
+            onPressed: _saveSignature,
+            child: const Text('Save Signature'),
+          ),
+          */
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

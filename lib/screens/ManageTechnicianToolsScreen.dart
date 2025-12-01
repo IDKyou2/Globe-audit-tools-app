@@ -26,6 +26,7 @@ class _ManageTechnicianToolsScreenState
   final ImagePicker _picker = ImagePicker();
 
   File? _imageFile;
+
   List<Map<String, dynamic>> _tools = [];
   bool _loading = true;
   bool _saving = false;
@@ -40,14 +41,13 @@ class _ManageTechnicianToolsScreenState
     penColor: Colors.black,
     exportBackgroundColor: Colors.white,
   );
-  File? _signatureFile;
-
   @override
   void initState() {
     super.initState();
     _fetchTechnicianTools();
     _fetchCategories();
     _scrollController = ScrollController();
+    _refreshTechnicianData();
 
     _scrollController.addListener(() {
       if (_scrollController.offset > 200 && !_showScrollToTop) {
@@ -195,17 +195,6 @@ class _ManageTechnicianToolsScreenState
         backgroundColor: Colors.green,
         textColor: Colors.white,
       );
-
-      /*
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Saved ${changedTools.length} changes'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      */
     } catch (e) {
       debugPrint('❌ Error saving changes: $e');
 
@@ -221,6 +210,7 @@ class _ManageTechnicianToolsScreenState
         setState(() => _saving = false);
       }
     }
+  
   }
 
   void _checkForChanges() {
@@ -295,42 +285,48 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  Future<void> _saveSignature() async {
-    if (_signatureController.isEmpty) {
-      Fluttertoast.showToast(msg: "Please sign first");
-      return;
+  Future<bool> saveSignature({
+    required String technicianId,
+    required File imageFile,
+  }) async {
+    final supabase = Supabase.instance.client;
+
+    // 🔍 DEBUG: Check authentication
+    final user = supabase.auth.currentUser;
+    debugPrint("Current user: ${user?.id}");
+    debugPrint("User role: ${user?.role}");
+
+    if (user == null) {
+      debugPrint("❌ User not authenticated!");
+      return false;
     }
 
     try {
-      final signatureBytes = await _signatureController.toPngBytes();
-      if (signatureBytes == null) return;
+      final fileName =
+          "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
 
-      final dir = await getTemporaryDirectory();
-      // Use timestamp to force refresh
-      final file = File(
-        '${dir.path}/signature_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-      await file.writeAsBytes(signatureBytes);
+      final bytes = await imageFile.readAsBytes();
 
-      setState(() {
-        _signatureFile = file; // store for display
-      });
+      debugPrint("📤 Uploading to bucket: technician_signatures");
+      debugPrint("📄 Filename: $fileName");
 
-      Fluttertoast.showToast(msg: "Signature saved successfully");
+      await supabase.storage
+          .from('technician_signatures')
+          .uploadBinary(fileName, bytes);
+
+      final publicUrl = supabase.storage
+          .from('technician_signatures')
+          .getPublicUrl(fileName);
+
+      await supabase
+          .from('technicians')
+          .update({'e_signature': publicUrl})
+          .eq('id', technicianId);
+
+      return true;
     } catch (e) {
-      Fluttertoast.showToast(msg: "Error saving signature: $e");
-    }
-  }
-
-  Future<void> _shareSignature() async {
-    if (_signatureFile == null) return;
-
-    try {
-      await Share.shareXFiles([
-        XFile(_signatureFile!.path),
-      ], text: "${widget.technician?['name'] ?? 'Technician'} Signature");
-    } catch (e) {
-      Fluttertoast.showToast(msg: "Error sharing signature: $e");
+      debugPrint("❌ Error saving e-signature: $e");
+      return false;
     }
   }
 
@@ -340,65 +336,146 @@ class _ManageTechnicianToolsScreenState
     await showDialog(
       context: context,
       builder: (context) {
-        bool isSharing = false;
-        return AlertDialog(
-          title: const Text('Sign Here'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300, // Bigger signature pad
-            child: Signature(
-              controller: _signatureController,
-              backgroundColor: Colors.grey[200]!,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: isSharing
-                  ? null
-                  : () async {
-                      if (_signatureController.isEmpty) {
-                        Fluttertoast.showToast(msg: "Please sign first");
-                        return;
-                      }
+        bool isSaving = false;
 
-                      isSharing = true;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Sign Here'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: Signature(
+                  controller: _signatureController,
+                  backgroundColor: Colors.grey[200]!,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          if (_signatureController.isEmpty) {
+                            Fluttertoast.showToast(msg: "Please sign first");
+                            return;
+                          }
 
-                      // Get signature bytes
-                      final sigBytes = await _signatureController.toPngBytes();
-                      if (sigBytes == null) return;
+                          setDialogState(() => isSaving = true);
 
-                      final technicianName =
-                          widget.technician?['name'] ?? 'Technician';
+                          try {
+                            final technicianId = widget.technician?['id'];
 
-                      // Sanitize name for filename
-                      final safeName = technicianName.replaceAll(
-                        RegExp(r'\s+'),
-                        '_',
-                      );
+                            if (technicianId == null) {
+                              Fluttertoast.showToast(
+                                msg: "Technician ID missing!",
+                              );
+                              setDialogState(() => isSaving = false);
+                              return;
+                            }
 
-                      // Share image directly without adding text
-                      final tempFile = XFile.fromData(
-                        sigBytes,
-                        mimeType: 'image/png',
-                        name: 'signature_$safeName.png',
-                      );
+                            // Get signature PNG bytes
+                            final sigBytes = await _signatureController
+                                .toPngBytes();
+                            if (sigBytes == null) {
+                              Fluttertoast.showToast(
+                                msg: "Failed to capture signature.",
+                              );
+                              setDialogState(() => isSaving = false);
+                              return;
+                            }
 
-                      await Share.shareXFiles([
-                        tempFile,
-                      ], text: "$technicianName's_E-signature");
+                            final fileName =
+                                "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
 
-                      Navigator.pop(context);
-                    },
-              child: const Text('Share'),
-            ),
-          ],
+                            // Upload to Supabase Storage
+                            await _supabase.storage
+                                .from('technician_signatures')
+                                .uploadBinary(fileName, sigBytes);
+
+                            // Get public URL
+                            final publicUrl = _supabase.storage
+                                .from('technician_signatures')
+                                .getPublicUrl(fileName);
+
+                            print("✅ Signature uploaded: $publicUrl");
+
+                            // Save URL to technicians table
+                            await _supabase
+                                .from('technicians')
+                                .update({'e_signature': publicUrl})
+                                .eq('id', technicianId);
+
+                            print("✅ Signature URL saved to database");
+
+                            // Close dialog first
+                            Navigator.pop(context);
+
+                            // ✅ Update local technician data and refresh UI
+                            setState(() {
+                              widget.technician?['e_signature'] = publicUrl;
+                            });
+
+                            print(
+                              "✅ UI updated with signature: ${widget.technician?['e_signature']}",
+                            );
+
+                            Fluttertoast.showToast(
+                              msg: "Signature saved successfully!",
+                              backgroundColor: Colors.green,
+                            );
+                          } catch (e) {
+                            Fluttertoast.showToast(
+                              msg: "Error saving signature: $e",
+                              backgroundColor: Colors.red,
+                            );
+                            print("❌ Error: $e");
+                            setDialogState(() => isSaving = false);
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF003E70),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  Future<void> _refreshTechnicianData() async {
+    final technicianId = widget.technician?['id'];
+    if (technicianId == null) return;
+
+    try {
+      final data = await _supabase
+          .from('technicians')
+          .select('id, name, e_signature')
+          .eq('id', technicianId)
+          .single();
+
+      setState(() {
+        widget.technician?['e_signature'] = data['e_signature'];
+      });
+    } catch (e) {
+      print("Error refreshing technician data: $e");
+    }
   }
 
   //Widgets Section
@@ -444,15 +521,18 @@ class _ManageTechnicianToolsScreenState
           ],
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
         // 🔥 Dynamically display ALL categories from Supabase
         ..._categories.map((cat) => _buildCategoryTools(cat)).toList(),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 5),
 
         if (_imageFile != null) _buildCapturedPhoto(),
-        if (_signatureFile != null) _buildCapturedSignature(),
+        // Only show signature if it exists AND changes have been saved
+        if (widget.technician?['e_signature'] != null && !_hasChanges)
+          _showSignature(),
+
         const SizedBox(height: 80),
       ],
     );
@@ -714,9 +794,10 @@ class _ManageTechnicianToolsScreenState
     );
   }
 
-  // Widget for signature
-  Widget _buildSignatureCard() {
+  //Widget _buildSignatureCard() {
+  Widget _showSignature() {
     final technicianName = widget.technician?['name'] ?? 'Technician';
+    final signatureUrl = widget.technician?['e_signature'];
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -727,101 +808,105 @@ class _ManageTechnicianToolsScreenState
           Container(
             padding: const EdgeInsets.all(16),
             color: const Color(0xFF003E70),
-            child: Text(
-              'Signature for $technicianName',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Signature(
-              controller: _signatureController,
-              height: 150,
-              backgroundColor: Colors.grey[200]!,
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () {
-                  _signatureController.clear();
-                },
-                child: const Text('Clear'),
-              ),
-              ElevatedButton(
-                onPressed: _saveSignature,
-                child: const Text('Save'),
-              ),
-              const SizedBox(width: 16),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCapturedSignature() {
-    if (_signatureFile == null) return const SizedBox.shrink();
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-      elevation: 2,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF003E70),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(4),
-                topRight: Radius.circular(4),
-              ),
-            ),
             child: Row(
               children: [
                 const Icon(Icons.edit, color: Colors.white, size: 24),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Signature',
-                    style: TextStyle(
+                    //'E-signature $technicianName',
+                    'E-signature',
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.share, color: Colors.white, size: 20),
-                  onPressed: _shareSignature,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
-                  onPressed: () {
-                    setState(() => _signatureFile = null);
-                  },
-                ),
+                if (signatureUrl != null)
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    onPressed: _openSignaturePad,
+                    tooltip: 'Update Signature',
+                  ),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.file(
-                _signatureFile!,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                key: ValueKey(_signatureFile!.path), // forces refresh
+            child: signatureUrl != null
+                ? Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          signatureUrl,
+                          height: 150,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              height: 150,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 150,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Text('Failed to load signature'),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Signature saved',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  )
+                : Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'No signature yet',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ),
+          ),
+          if (signatureUrl == null)
+            Padding(
+              padding: const EdgeInsets.only(right: 16, bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _openSignaturePad,
+                    icon: const Icon(Icons.draw),
+                    label: const Text('Add Signature'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF003E70),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
         ],
       ),
     );
@@ -876,7 +961,6 @@ class _ManageTechnicianToolsScreenState
               child: const Icon(Icons.edit, color: Colors.white),
             ),
           ],
-
           if (_hasChanges) ...[
             const SizedBox(height: 16),
             FloatingActionButton.extended(

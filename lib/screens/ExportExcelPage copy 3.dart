@@ -21,7 +21,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
   Future<void> exportExcel() async {
     setState(() => _exporting = true);
-
+    
     try {
       final supabase = Supabase.instance.client;
 
@@ -38,7 +38,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         final name = r['technicians']['name'];
         final createdAt = DateTime.parse(r['technicians']['updated_at']);
         final signature = r['technicians']['e_signature'];
-
+        
         techMap[name] = createdAt;
         techSignatures[name] = signature;
       }
@@ -106,9 +106,8 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
       for (var col = 0; col <= techNames.length; col++) {
         sheet
-                .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
-                .cellStyle =
-            boldStyle;
+            .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+            .cellStyle = boldStyle;
       }
 
       for (final category in sortedCategories) {
@@ -116,14 +115,13 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
         sheet.appendRow([TextCellValue(category)]);
         sheet
-                .cell(
-                  CellIndex.indexByColumnRow(
-                    columnIndex: 0,
-                    rowIndex: headerRow,
-                  ),
-                )
-                .cellStyle =
-            boldStyle;
+            .cell(
+              CellIndex.indexByColumnRow(
+                columnIndex: 0,
+                rowIndex: headerRow,
+              ),
+            )
+            .cellStyle = boldStyle;
 
         final sortedTools = categorizedTools[category]!.toList()..sort();
 
@@ -155,9 +153,9 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
       // Add signatures section - aligned with technician columns
       final signatureRow = sheet.maxRows + 2;
-
+      
       sheet.appendRow([]);
-
+      
       sheet.appendRow([
         TextCellValue("Signature:"),
         ...techNames.map((name) {
@@ -169,16 +167,13 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
           }
         }),
       ]);
-
+      
       sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: signatureRow + 1,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
+          .cell(CellIndex.indexByColumnRow(
+            columnIndex: 0,
+            rowIndex: signatureRow + 1,
+          ))
+          .cellStyle = boldStyle;
 
       final dir = Directory("/storage/emulated/0/Download");
       final fileName = "Tools-Audit-${now.month}-${now.day}-${now.year}.xlsx";
@@ -220,7 +215,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
   //PDF
   Future<void> exportPDF() async {
     setState(() => _exporting = true);
-
+    
     try {
       final supabase = Supabase.instance.client;
 
@@ -237,7 +232,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         final name = r['technicians']['name'];
         final createdAt = DateTime.parse(r['technicians']['updated_at']);
         final signature = r['technicians']['e_signature'];
-
+        
         techMap[name] = createdAt;
         techSignatures[name] = signature;
       }
@@ -350,8 +345,8 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                     0: const pw.FlexColumnWidth(2),
                     ...{
                       for (var i = 0; i < techNames.length; i++)
-                        i + 1: const pw.FlexColumnWidth(1),
-                    },
+                        i + 1: const pw.FlexColumnWidth(1)
+                    }
                   },
                   children: [
                     pw.TableRow(
@@ -371,9 +366,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                             padding: const pw.EdgeInsets.all(4),
                             child: pw.Text(
                               name,
-                              style: pw.TextStyle(
-                                fontWeight: pw.FontWeight.bold,
-                              ),
+                              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                               textAlign: pw.TextAlign.center,
                             ),
                           ),
@@ -392,10 +385,10 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                             final color = status == 'Onhand'
                                 ? PdfColors.green
                                 : status == 'Missing'
-                                ? PdfColors.orange
-                                : status == 'Defective'
-                                ? PdfColors.red
-                                : PdfColors.grey;
+                                    ? PdfColors.orange
+                                    : status == 'Defective'
+                                        ? PdfColors.red
+                                        : PdfColors.grey;
 
                             return pw.Padding(
                               padding: const pw.EdgeInsets.all(4),
@@ -635,7 +628,6 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                 ),
               ),
             ),
-
             /*
             // PDF Export Card
             Card(
@@ -689,6 +681,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
               ),
             ),
             */
+
             if (_exporting) ...[
               const SizedBox(height: 30),
               const CircularProgressIndicator(),
