@@ -275,6 +275,16 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Tool name input
+                TextField(
+                  controller: _toolNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tool Name *',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // Category dropdown
                 DropdownButtonFormField<String>(
                   value: _selectedCategory,
@@ -286,15 +296,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
                   onChanged: (v) => setStateDialog(() => _selectedCategory = v),
-                ),
-                const SizedBox(height: 16),
-                // Tool name input
-                TextField(
-                  controller: _toolNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tool Name *',
-                    border: OutlineInputBorder(),
-                  ),
                 ),
 
                 const SizedBox(height: 10),
@@ -732,14 +733,13 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                 // Optional: Also set old tools to "Uncategorized"
                 await Supabase.instance.client
                     .from('tools')
-                    .update({'name': 'Uncategorized'})
-                    .eq('category_id', categoryName);
+                    .update({'category': 'Uncategorized'})
+                    .eq('category', categoryName);
 
                 await _fetchCategories();
                 await _fetchTools();
               } catch (e) {
                 Fluttertoast.showToast(msg: "Error deleting category: $e");
-                print("Error: $e");
               }
             },
             child: const Text(
