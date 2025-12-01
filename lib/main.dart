@@ -2,8 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tools_audit_app/screens/AdminApprovalPage.dart';
 import 'package:tools_audit_app/screens/ExportExcelPage.dart';
 import 'package:tools_audit_app/screens/SignupPage.dart';
+import 'package:tools_audit_app/screens/SuperAdminPage.dart';
 import 'screens/LoginScreen.dart';
 import 'screens/DashboardScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -68,6 +70,11 @@ Future<void> main() async {
       GoRoute(
         path: '/signup',
         builder: (context, state) => const SignupScreen(),
+      ),
+      GoRoute(path: '/superadmin', builder: (_, __) => const SuperAdminPage()),
+      GoRoute(
+        path: '/admin-approvals',
+        builder: (_, __) => const AdminApprovalPage(),
       ),
     ],
   );

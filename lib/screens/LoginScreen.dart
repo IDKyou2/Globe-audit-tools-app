@@ -50,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUsername = prefs.getString('username');
@@ -108,6 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
     final supabase = Supabase.instance.client;
 
+
+
     try {
       // Fetch the user by username only (do NOT filter by password)
       final response = await supabase
@@ -130,6 +131,39 @@ class _LoginScreenState extends State<LoginScreen> {
         await _clearCredentials();
       } else {
         final hashedPassword = response['password'] as String;
+
+        
+    // Check role and approval
+    final role = response!['role'];
+    final isApproved = response['is_approved'] ?? false;
+
+    // If role is "user" but not approved yet
+  if (role == 'user' && !isApproved) {
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Your account is awaiting admin approval'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    setState(() => _loading = false); // stop spinner
+  }
+  return;
+}
+
+
+    // If role is admin but not approved by superadmin
+    if (role == 'admin' && !isApproved) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Admin approval required'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
         // Verify the password using bcrypt
         final passwordMatches = BCrypt.checkpw(password, hashedPassword);
@@ -167,7 +201,17 @@ class _LoginScreenState extends State<LoginScreen> {
         }
 
         // Navigate immediately
-        if (mounted) context.go('/dashboard');
+        // if (mounted) context.go('/dashboard');
+
+        if (mounted) {
+          if (role == 'superadmin') {
+            context.go('/superadmin');
+          } else if (role == 'admin') {
+            context.go('/admin-approvals');
+          } else {
+            context.go('/dashboard');
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -182,7 +226,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       body: Container(
         width: double.infinity,
