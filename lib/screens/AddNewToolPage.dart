@@ -1,3 +1,6 @@
+// ignore_for_file: file_names, no_leading_underscores_for_local_identifiers
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -14,7 +17,6 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   final _searchController = TextEditingController();
   String? _selectedCategory;
   bool _isLoading = false;
-  bool _isSearching = false;
   late ScrollController _scrollController;
   bool _showScrollToTop = false;
   String? _selectedFilterCategory; // null = show all
@@ -75,18 +77,18 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
   }
   */
 
-  void _filterTools(String query) {
-    setState(() {
-      _filteredTools = query.isEmpty
-          ? _tools
-          : _tools.where((tool) {
-              final name = tool['name']?.toString().toLowerCase() ?? '';
-              final category = tool['category']?.toString().toLowerCase() ?? '';
-              final search = query.toLowerCase();
-              return name.contains(search) || category.contains(search);
-            }).toList();
-    });
-  }
+  // void _filterTools(String query) {
+  //   setState(() {
+  //     _filteredTools = query.isEmpty
+  //         ? _tools
+  //         : _tools.where((tool) {
+  //             final name = tool['name']?.toString().toLowerCase() ?? '';
+  //             final category = tool['category']?.toString().toLowerCase() ?? '';
+  //             final search = query.toLowerCase();
+  //             return name.contains(search) || category.contains(search);
+  //           }).toList();
+  //   });
+  // }
 
   Future<void> _fetchCategories() async {
     setState(() => _isCategoriesLoading = true);
@@ -114,7 +116,9 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
         }
       });
     } catch (e) {
-      print("Error fetching categories: $e");
+      if (kDebugMode) {
+        print("Error fetching categories: $e");
+      }
       setState(() => _isCategoriesLoading = false);
     }
   }
@@ -239,7 +243,9 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
                             isDialogLoading = false;
                             errorMessage = 'Error adding category.';
                           });
-                          print("CATEGORY ERROR: $e");
+                          if (kDebugMode) {
+                            print("CATEGORY ERROR: $e");
+                          }
                         }
                       },
                       icon: const Icon(Icons.add, color: Colors.white),

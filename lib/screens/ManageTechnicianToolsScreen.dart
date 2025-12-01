@@ -1,4 +1,5 @@
-import 'dart:ui';
+// ignore_for_file: file_names
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,7 +7,6 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:signature/signature.dart';
-import 'package:path_provider/path_provider.dart';
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
@@ -798,7 +798,6 @@ class _ManageTechnicianToolsScreenState
 
   //Widget _buildSignatureCard() {
   Widget _showSignature() {
-    final technicianName = widget.technician?['name'] ?? 'Technician';
     final signatureUrl = widget.technician?['e_signature'];
 
     return Card(
