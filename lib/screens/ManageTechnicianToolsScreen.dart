@@ -228,7 +228,7 @@ class _ManageTechnicianToolsScreenState
       case 'PPE':
         return Icons.security;
       case 'GPON Tools':
-        return Icons.settings_input_antenna;
+        return Icons.settings_input_antenna;  
       case 'Common Tools':
         return Icons.build;
       case 'Additional Tools':
