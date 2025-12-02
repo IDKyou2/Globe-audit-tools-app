@@ -210,7 +210,6 @@ class _ManageTechnicianToolsScreenState
         setState(() => _saving = false);
       }
     }
-  
   }
 
   void _checkForChanges() {
@@ -228,7 +227,7 @@ class _ManageTechnicianToolsScreenState
       case 'PPE':
         return Icons.security;
       case 'GPON Tools':
-        return Icons.settings_input_antenna;  
+        return Icons.settings_input_antenna;
       case 'Common Tools':
         return Icons.build;
       case 'Additional Tools':
@@ -243,6 +242,8 @@ class _ManageTechnicianToolsScreenState
   }
 
   Future<void> _takePicture() async {
+    final supabase = Supabase.instance.client;
+
     final pickedFile = await _picker.pickImage(
       source: ImageSource.camera,
       maxWidth: 800,
@@ -250,23 +251,58 @@ class _ManageTechnicianToolsScreenState
       imageQuality: 80,
     );
 
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
+    if (pickedFile == null) return;
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Photo captured'),
-          backgroundColor: Color(0xFF003E70), //blue
-          duration: Duration(seconds: 2),
-        ),
-      );
+    final file = File(pickedFile.path);
+
+    setState(() {
+      _imageFile = file;
+    });
+
+    final fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+    try {
+      final technicianId = widget.technician?['id'];
+      // Upload to the correct bucket
+      await supabase.storage
+          .from('technicians_pictures')
+          .upload(fileName, file);
+
+      // Get URL from the SAME bucket
+      final publicUrl = supabase.storage
+          .from('technicians_pictures')
+          .getPublicUrl(fileName);
+
+      // Save URL to database — INSERT or UPDATE depends on your logic
+      await supabase
+          .from('technicians')
+          .update({'pictures': publicUrl})
+          .eq('id', technicianId); // <- replace this with your actual id
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            //saved to database
+            content: Text('Photo saved.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $error'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      print("Upload failed: $error");
     }
   }
 
   Future<void> _sharePhoto() async {
+    //Share icon function
     if (_imageFile == null) return;
 
     try {
@@ -287,50 +323,50 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  Future<bool> saveSignature({
-    required String technicianId,
-    required File imageFile,
-  }) async {
-    final supabase = Supabase.instance.client;
+  // Future<bool> saveSignature({
+  //   required String technicianId,
+  //   required File imageFile,
+  // }) async {
+  //   final supabase = Supabase.instance.client;
 
-    // 🔍 DEBUG: Check authentication
-    final user = supabase.auth.currentUser;
-    debugPrint("Current user: ${user?.id}");
-    debugPrint("User role: ${user?.role}");
+  //   // 🔍 DEBUG: Check authentication
+  //   final user = supabase.auth.currentUser;
+  //   debugPrint("Current user: ${user?.id}");
+  //   debugPrint("User role: ${user?.role}");
 
-    if (user == null) {
-      debugPrint("❌ User not authenticated!");
-      return false;
-    }
+  //   if (user == null) {
+  //     debugPrint("❌ User not authenticated!");
+  //     return false;
+  //   }
 
-    try {
-      final fileName =
-          "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
+  //   try {
+  //     final fileName =
+  //         "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
 
-      final bytes = await imageFile.readAsBytes();
+  //     final bytes = await imageFile.readAsBytes();
 
-      debugPrint("📤 Uploading to bucket: technician_signatures");
-      debugPrint("📄 Filename: $fileName");
+  //     debugPrint("📤 Uploading to bucket: technician_signatures");
+  //     debugPrint("📄 Filename: $fileName");
 
-      await supabase.storage
-          .from('technician_signatures')
-          .uploadBinary(fileName, bytes);
+  //     await supabase.storage
+  //         .from('technician_signatures')
+  //         .uploadBinary(fileName, bytes);
 
-      final publicUrl = supabase.storage
-          .from('technician_signatures')
-          .getPublicUrl(fileName);
+  //     final publicUrl = supabase.storage
+  //         .from('technician_signatures')
+  //         .getPublicUrl(fileName);
 
-      await supabase
-          .from('technicians')
-          .update({'e_signature': publicUrl})
-          .eq('id', technicianId);
+  //     await supabase
+  //         .from('technicians')
+  //         .update({'e_signature': publicUrl})
+  //         .eq('id', technicianId);
 
-      return true;
-    } catch (e) {
-      debugPrint("❌ Error saving e-signature: $e");
-      return false;
-    }
-  }
+  //     return true;
+  //   } catch (e) {
+  //     debugPrint("❌ Error saving e-signature: $e");
+  //     return false;
+  //   }
+  // }
 
   Future<void> _openSignaturePad() async {
     _signatureController.clear();
@@ -765,7 +801,7 @@ class _ManageTechnicianToolsScreenState
                 ),
                 IconButton(
                   icon: const Icon(Icons.share, color: Colors.white, size: 20),
-                  onPressed: _sharePhoto,
+                  onPressed: _sharePhoto, //share icon function
                   tooltip: 'Share/Download Photo',
                 ),
                 IconButton(
@@ -867,13 +903,13 @@ class _ManageTechnicianToolsScreenState
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Signature saved',
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      // const Text(
+                      //   'Signature saved',
+                      //   style: TextStyle(
+                      //     color: Colors.green,
+                      //     fontWeight: FontWeight.bold,
+                      //   ),
+                      // ),
                     ],
                   )
                 : Container(
@@ -984,17 +1020,6 @@ class _ManageTechnicianToolsScreenState
               backgroundColor: const Color(0xFF003E70),
             ),
           ],
-          /*
-          Signature(
-            controller: _signatureController,
-            height: 200,
-            backgroundColor: Colors.grey[200]!,
-          ),
-          ElevatedButton(
-            onPressed: _saveSignature,
-            child: const Text('Save Signature'),
-          ),
-          */
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,

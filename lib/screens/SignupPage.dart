@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:bcrypt/bcrypt.dart'; //for hashing
+import 'package:fluttertoast/fluttertoast.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -62,6 +63,9 @@ class SignupPage extends State<SignupScreen> {
             ),
           );
         }
+        _usernameController.clear();
+        //   _fullNameController.clear();
+        //   _passwordController.clear();
         return;
       }
 
@@ -76,23 +80,28 @@ class SignupPage extends State<SignupScreen> {
       }).maybeSingle();
 
       if (response != null && mounted) {
-        // Show success dialog
-        await showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Account Created'),
-            content: const Text('Your account was created successfully!'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  context.go('/'); // Redirect to login
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
+        if (mounted) setState(() => _loading = false);
+        _usernameController.clear();
+        _fullNameController.clear();
+        _passwordController.clear();
+
+        // Dili ma read diri
+        // await showDialog(
+        //   context: context,
+        //   builder: (_) => AlertDialog(
+        //     title: const Text('Account Created'),
+        //     content: const Text('Your account was created successfully!'),
+        //     actions: [
+        //       TextButton(
+        //         onPressed: () {
+        //           Navigator.pop(context); // Close dialog
+        //           context.go('/'); // Redirect to login
+        //         },
+        //         child: const Text('OK'),
+        //       ),
+        //     ],
+        //   ),
+        // );
       }
     } catch (e) {
       if (mounted) {
@@ -112,9 +121,18 @@ class SignupPage extends State<SignupScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
-      _usernameController.clear();
-      _fullNameController.clear();
-      _passwordController.clear();
+      context.go('/'); // Redirect to login
+      Fluttertoast.showToast(
+        //Show success dialog
+        msg: "Account created successfully. Redirected to login",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
+      );
+      //   _usernameController.clear();
+      //   _fullNameController.clear();
+      //   _passwordController.clear();
     }
   }
 
