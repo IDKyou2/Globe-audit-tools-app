@@ -169,6 +169,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
       sheet.appendRow([]);
 
       // Pictures row
+      final picturesRowIndex = sheet.maxRows;
       sheet.appendRow([
         TextCellValue("Pictures"),
         ...techNames.map((name) {
@@ -180,10 +181,22 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
           }
         }),
       ]);
+      // Make "Pictures" bold
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: picturesRowIndex,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
       // -----------------------------
       // SIGNATURE ROW (existing code)
       // -----------------------------
-      final signatureRow = sheet.maxRows + 1;
+
+      // Signatures row
+      final signatureRowIndex = sheet.maxRows;
       sheet.appendRow([
         TextCellValue("Signatures"),
         ...techNames.map((name) {
@@ -196,21 +209,12 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         }),
       ]);
 
+      // Make "Signatures" bold
       sheet
               .cell(
                 CellIndex.indexByColumnRow(
                   columnIndex: 0,
-                  rowIndex: signatureRow + 1,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
-
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: signatureRow + 1,
+                  rowIndex: signatureRowIndex,
                 ),
               )
               .cellStyle =
