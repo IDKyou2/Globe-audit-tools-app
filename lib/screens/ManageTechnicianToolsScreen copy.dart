@@ -7,8 +7,6 @@ import 'package:share_plus/share_plus.dart';
 import 'dart:io';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:signature/signature.dart';
-import 'dart:ui' as ui;
-import 'package:flutter/services.dart' show rootBundle, Uint8List;
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final Map<String, dynamic>? technician;
@@ -370,73 +368,12 @@ class _ManageTechnicianToolsScreenState
   //   }
   // }
 
-  Future<Uint8List> addNameToSignature(
-    Uint8List signatureBytes,
-    String name,
-  ) async {
-    final codec = await ui.instantiateImageCodec(signatureBytes);
-    final frame = await codec.getNextFrame();
-    final signatureImage = frame.image;
-
-    const extraHeight = 30; // space for the name
-
-    // Create a larger canvas BEFORE drawing
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    final totalWidth = signatureImage.width.toDouble();
-    final totalHeight = signatureImage.height.toDouble() + extraHeight;
-
-    // Fill background (optional)
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, totalWidth, totalHeight),
-      Paint()..color = const ui.Color(0xFFFFFFFF),
-    );
-
-    // Draw the signature normally, without scaling
-    canvas.drawImage(signatureImage, const Offset(0, 0), Paint());
-
-    // Draw text BELOW the signature
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: name,
-        style: const TextStyle(
-          color: ui.Color(0xFF000000),
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-
-    textPainter.layout();
-
-    // Center the name horizontally
-    final nameX = (totalWidth - textPainter.width) / 2;
-    final nameY = signatureImage.height.toDouble();
-
-    textPainter.paint(canvas, Offset(nameX, nameY));
-
-    // Final image
-    final picture = recorder.endRecording();
-    final finalImage = await picture.toImage(
-      signatureImage.width,
-      signatureImage.height + extraHeight,
-    );
-
-    final byteData = await finalImage.toByteData(
-      format: ui.ImageByteFormat.png,
-    );
-    return byteData!.buffer.asUint8List();
-  }
-
   Future<void> _openSignaturePad() async {
     _signatureController.clear();
 
     await showDialog(
       context: context,
       builder: (context) {
-        bool isProcessing = false;
         bool isSaving = false;
 
         return StatefulBuilder(
@@ -445,115 +382,17 @@ class _ManageTechnicianToolsScreenState
               title: const Text('Sign Here'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Signature Pad
-                    Container(
-                      height: 250,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.black54),
-                      ),
-                      child: Signature(
-                        controller: _signatureController,
-                        backgroundColor: Colors.grey[200]!,
-                      ),
-                    ),
-                  ],
+                height: 300,
+                child: Signature(
+                  controller: _signatureController,
+                  backgroundColor: Colors.grey[200]!,
                 ),
               ),
               actions: [
-                // Cancel button
                 TextButton(
-                  onPressed: isProcessing ? null : () => Navigator.pop(context),
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
-
-                // Clear button
-                TextButton(
-                  onPressed: isProcessing
-                      ? null
-                      : () {
-                          _signatureController.clear();
-                        },
-                  child: const Text('Clear'),
-                ),
-
-                // Display button
-                // TextButton(
-                //   onPressed: isProcessing
-                //       ? null
-                //       : () async {
-                //           if (_signatureController.isEmpty) {
-                //             Fluttertoast.showToast(msg: "Please sign first");
-                //             return;
-                //           }
-
-                //           setDialogState(() => isProcessing = true);
-
-                //           try {
-                //             final technicianName =
-                //                 widget.technician?['name'] ?? "Technician";
-
-                //             // Get signature PNG
-                //             final sigBytes = await _signatureController
-                //                 .toPngBytes();
-                //             if (sigBytes == null) {
-                //               Fluttertoast.showToast(
-                //                 msg: "Failed to capture signature.",
-                //               );
-                //               setDialogState(() => isProcessing = false);
-                //               return;
-                //             }
-
-                //             // Create final image with signature + name
-                //             final combinedBytes = await addNameToSignature(
-                //               sigBytes,
-                //               technicianName,
-                //             );
-
-                //             // Show the image in a new dialog
-                //             showDialog(
-                //               context: context,
-                //               builder: (_) => AlertDialog(
-                //                 title: const Text("Preview Signature"),
-                //                 content: Image.memory(
-                //                   combinedBytes,
-                //                   width: double.maxFinite,
-                //                 ),
-                //                 actions: [
-                //                   TextButton(
-                //                     onPressed: () => Navigator.pop(context),
-                //                     child: const Text("Close"),
-                //                   ),
-                //                 ],
-                //               ),
-                //             );
-
-                //             setDialogState(() => isProcessing = false);
-                //           } catch (e) {
-                //             Fluttertoast.showToast(
-                //               msg: "Error: $e",
-                //               backgroundColor: Colors.red,
-                //             );
-                //             setDialogState(() => isProcessing = false);
-                //           }
-                //         },
-                //   // style: ElevatedButton.styleFrom(
-                //   //   backgroundColor: const Color(0xFF003E70),
-                //   //   foregroundColor: Colors.white,
-                //   // ),
-                //   child: isProcessing
-                //       ? const SizedBox(
-                //           width: 20,
-                //           height: 20,
-                //           child: CircularProgressIndicator(
-                //             strokeWidth: 2,
-                //             color: Colors.white,
-                //           ),
-                //         )
-                //       : const Text('Preview'),
-                // ),
                 ElevatedButton(
                   onPressed: isSaving
                       ? null
@@ -567,9 +406,6 @@ class _ManageTechnicianToolsScreenState
 
                           try {
                             final technicianId = widget.technician?['id'];
-                            //Displays technician name
-                            final technicianName =
-                                widget.technician?['name'] ?? "Technician";
 
                             if (technicianId == null) {
                               Fluttertoast.showToast(
@@ -579,7 +415,7 @@ class _ManageTechnicianToolsScreenState
                               return;
                             }
 
-                            // Get signature PNG
+                            // Get signature PNG bytes
                             final sigBytes = await _signatureController
                                 .toPngBytes();
                             if (sigBytes == null) {
@@ -590,24 +426,20 @@ class _ManageTechnicianToolsScreenState
                               return;
                             }
 
-                            // 🔥 Create final image with signature + name
-                            final combinedBytes = await addNameToSignature(
-                              sigBytes,
-                              technicianName,
-                            );
-
                             final fileName =
                                 "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
 
-                            // Upload combined PNG to Supabase
+                            // Upload to Supabase Storage
                             await _supabase.storage
                                 .from('technician_signatures')
-                                .uploadBinary(fileName, combinedBytes);
+                                .uploadBinary(fileName, sigBytes);
 
                             // Get public URL
                             final publicUrl = _supabase.storage
                                 .from('technician_signatures')
                                 .getPublicUrl(fileName);
+
+                            print("✅ Signature uploaded: $publicUrl");
 
                             // Save URL to technicians table
                             await _supabase
@@ -615,23 +447,30 @@ class _ManageTechnicianToolsScreenState
                                 .update({'e_signature': publicUrl})
                                 .eq('id', technicianId);
 
-                            // Close dialog
+                            print("✅ Signature URL saved to database");
+
+                            // Close dialog first
                             Navigator.pop(context);
 
-                            // Refresh UI
+                            // ✅ Update local technician data and refresh UI
                             setState(() {
                               widget.technician?['e_signature'] = publicUrl;
                             });
 
+                            print(
+                              "✅ UI updated with signature: ${widget.technician?['e_signature']}",
+                            );
+
                             Fluttertoast.showToast(
-                              msg: "Signature saved!",
+                              msg: "Signature saved successfully!",
                               backgroundColor: Colors.green,
                             );
                           } catch (e) {
                             Fluttertoast.showToast(
-                              msg: "Error: $e",
+                              msg: "Error saving signature: $e",
                               backgroundColor: Colors.red,
                             );
+                            print("❌ Error: $e");
                             setDialogState(() => isSaving = false);
                           }
                         },
@@ -1064,6 +903,13 @@ class _ManageTechnicianToolsScreenState
                         ),
                       ),
                       const SizedBox(height: 8),
+                      // const Text(
+                      //   'Signature saved',
+                      //   style: TextStyle(
+                      //     color: Colors.green,
+                      //     fontWeight: FontWeight.bold,
+                      //   ),
+                      // ),
                     ],
                   )
                 : Container(

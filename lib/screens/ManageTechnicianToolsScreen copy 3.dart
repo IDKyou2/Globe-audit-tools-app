@@ -378,7 +378,7 @@ class _ManageTechnicianToolsScreenState
     final frame = await codec.getNextFrame();
     final signatureImage = frame.image;
 
-    const extraHeight = 30; // space for the name
+    const extraHeight = 120; // space for the name
 
     // Create a larger canvas BEFORE drawing
     final recorder = ui.PictureRecorder();
@@ -402,7 +402,7 @@ class _ManageTechnicianToolsScreenState
         text: name,
         style: const TextStyle(
           color: ui.Color(0xFF000000),
-          fontSize: 18,
+          fontSize: 24,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -413,7 +413,7 @@ class _ManageTechnicianToolsScreenState
 
     // Center the name horizontally
     final nameX = (totalWidth - textPainter.width) / 2;
-    final nameY = signatureImage.height.toDouble();
+    final nameY = signatureImage.height.toDouble() + 20;
 
     textPainter.paint(canvas, Offset(nameX, nameY));
 
@@ -436,7 +436,6 @@ class _ManageTechnicianToolsScreenState
     await showDialog(
       context: context,
       builder: (context) {
-        bool isProcessing = false;
         bool isSaving = false;
 
         return StatefulBuilder(
@@ -463,97 +462,10 @@ class _ManageTechnicianToolsScreenState
                 ),
               ),
               actions: [
-                // Cancel button
                 TextButton(
-                  onPressed: isProcessing ? null : () => Navigator.pop(context),
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
-
-                // Clear button
-                TextButton(
-                  onPressed: isProcessing
-                      ? null
-                      : () {
-                          _signatureController.clear();
-                        },
-                  child: const Text('Clear'),
-                ),
-
-                // Display button
-                // TextButton(
-                //   onPressed: isProcessing
-                //       ? null
-                //       : () async {
-                //           if (_signatureController.isEmpty) {
-                //             Fluttertoast.showToast(msg: "Please sign first");
-                //             return;
-                //           }
-
-                //           setDialogState(() => isProcessing = true);
-
-                //           try {
-                //             final technicianName =
-                //                 widget.technician?['name'] ?? "Technician";
-
-                //             // Get signature PNG
-                //             final sigBytes = await _signatureController
-                //                 .toPngBytes();
-                //             if (sigBytes == null) {
-                //               Fluttertoast.showToast(
-                //                 msg: "Failed to capture signature.",
-                //               );
-                //               setDialogState(() => isProcessing = false);
-                //               return;
-                //             }
-
-                //             // Create final image with signature + name
-                //             final combinedBytes = await addNameToSignature(
-                //               sigBytes,
-                //               technicianName,
-                //             );
-
-                //             // Show the image in a new dialog
-                //             showDialog(
-                //               context: context,
-                //               builder: (_) => AlertDialog(
-                //                 title: const Text("Preview Signature"),
-                //                 content: Image.memory(
-                //                   combinedBytes,
-                //                   width: double.maxFinite,
-                //                 ),
-                //                 actions: [
-                //                   TextButton(
-                //                     onPressed: () => Navigator.pop(context),
-                //                     child: const Text("Close"),
-                //                   ),
-                //                 ],
-                //               ),
-                //             );
-
-                //             setDialogState(() => isProcessing = false);
-                //           } catch (e) {
-                //             Fluttertoast.showToast(
-                //               msg: "Error: $e",
-                //               backgroundColor: Colors.red,
-                //             );
-                //             setDialogState(() => isProcessing = false);
-                //           }
-                //         },
-                //   // style: ElevatedButton.styleFrom(
-                //   //   backgroundColor: const Color(0xFF003E70),
-                //   //   foregroundColor: Colors.white,
-                //   // ),
-                //   child: isProcessing
-                //       ? const SizedBox(
-                //           width: 20,
-                //           height: 20,
-                //           child: CircularProgressIndicator(
-                //             strokeWidth: 2,
-                //             color: Colors.white,
-                //           ),
-                //         )
-                //       : const Text('Preview'),
-                // ),
                 ElevatedButton(
                   onPressed: isSaving
                       ? null

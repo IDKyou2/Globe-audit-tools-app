@@ -374,35 +374,25 @@ class _ManageTechnicianToolsScreenState
     Uint8List signatureBytes,
     String name,
   ) async {
+    // Decode signature image
     final codec = await ui.instantiateImageCodec(signatureBytes);
     final frame = await codec.getNextFrame();
-    final signatureImage = frame.image;
+    final image = frame.image;
 
-    const extraHeight = 30; // space for the name
-
-    // Create a larger canvas BEFORE drawing
+    // Prepare canvas
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    final totalWidth = signatureImage.width.toDouble();
-    final totalHeight = signatureImage.height.toDouble() + extraHeight;
+    // Draw original signature
+    canvas.drawImage(image, Offset.zero, Paint());
 
-    // Fill background (optional)
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, totalWidth, totalHeight),
-      Paint()..color = const ui.Color(0xFFFFFFFF),
-    );
-
-    // Draw the signature normally, without scaling
-    canvas.drawImage(signatureImage, const Offset(0, 0), Paint());
-
-    // Draw text BELOW the signature
+    // Draw technician name under the signature
     final textPainter = TextPainter(
       text: TextSpan(
         text: name,
         style: const TextStyle(
           color: ui.Color(0xFF000000),
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -411,18 +401,13 @@ class _ManageTechnicianToolsScreenState
 
     textPainter.layout();
 
-    // Center the name horizontally
-    final nameX = (totalWidth - textPainter.width) / 2;
-    final nameY = signatureImage.height.toDouble();
+    // Paint the name at the lower-left part of the image
+    textPainter.paint(canvas, Offset(10, image.height.toDouble() - 30));
 
-    textPainter.paint(canvas, Offset(nameX, nameY));
-
-    // Final image
     final picture = recorder.endRecording();
-    final finalImage = await picture.toImage(
-      signatureImage.width,
-      signatureImage.height + extraHeight,
-    );
+
+    // Add extra space for text (optional)
+    final finalImage = await picture.toImage(image.width, image.height + 40);
 
     final byteData = await finalImage.toByteData(
       format: ui.ImageByteFormat.png,
@@ -436,7 +421,6 @@ class _ManageTechnicianToolsScreenState
     await showDialog(
       context: context,
       builder: (context) {
-        bool isProcessing = false;
         bool isSaving = false;
 
         return StatefulBuilder(
@@ -463,97 +447,10 @@ class _ManageTechnicianToolsScreenState
                 ),
               ),
               actions: [
-                // Cancel button
                 TextButton(
-                  onPressed: isProcessing ? null : () => Navigator.pop(context),
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
-
-                // Clear button
-                TextButton(
-                  onPressed: isProcessing
-                      ? null
-                      : () {
-                          _signatureController.clear();
-                        },
-                  child: const Text('Clear'),
-                ),
-
-                // Display button
-                // TextButton(
-                //   onPressed: isProcessing
-                //       ? null
-                //       : () async {
-                //           if (_signatureController.isEmpty) {
-                //             Fluttertoast.showToast(msg: "Please sign first");
-                //             return;
-                //           }
-
-                //           setDialogState(() => isProcessing = true);
-
-                //           try {
-                //             final technicianName =
-                //                 widget.technician?['name'] ?? "Technician";
-
-                //             // Get signature PNG
-                //             final sigBytes = await _signatureController
-                //                 .toPngBytes();
-                //             if (sigBytes == null) {
-                //               Fluttertoast.showToast(
-                //                 msg: "Failed to capture signature.",
-                //               );
-                //               setDialogState(() => isProcessing = false);
-                //               return;
-                //             }
-
-                //             // Create final image with signature + name
-                //             final combinedBytes = await addNameToSignature(
-                //               sigBytes,
-                //               technicianName,
-                //             );
-
-                //             // Show the image in a new dialog
-                //             showDialog(
-                //               context: context,
-                //               builder: (_) => AlertDialog(
-                //                 title: const Text("Preview Signature"),
-                //                 content: Image.memory(
-                //                   combinedBytes,
-                //                   width: double.maxFinite,
-                //                 ),
-                //                 actions: [
-                //                   TextButton(
-                //                     onPressed: () => Navigator.pop(context),
-                //                     child: const Text("Close"),
-                //                   ),
-                //                 ],
-                //               ),
-                //             );
-
-                //             setDialogState(() => isProcessing = false);
-                //           } catch (e) {
-                //             Fluttertoast.showToast(
-                //               msg: "Error: $e",
-                //               backgroundColor: Colors.red,
-                //             );
-                //             setDialogState(() => isProcessing = false);
-                //           }
-                //         },
-                //   // style: ElevatedButton.styleFrom(
-                //   //   backgroundColor: const Color(0xFF003E70),
-                //   //   foregroundColor: Colors.white,
-                //   // ),
-                //   child: isProcessing
-                //       ? const SizedBox(
-                //           width: 20,
-                //           height: 20,
-                //           child: CircularProgressIndicator(
-                //             strokeWidth: 2,
-                //             color: Colors.white,
-                //           ),
-                //         )
-                //       : const Text('Preview'),
-                // ),
                 ElevatedButton(
                   onPressed: isSaving
                       ? null
@@ -567,7 +464,7 @@ class _ManageTechnicianToolsScreenState
 
                           try {
                             final technicianId = widget.technician?['id'];
-                            //Displays technician name
+                            //Displays technician's name
                             final technicianName =
                                 widget.technician?['name'] ?? "Technician";
 
