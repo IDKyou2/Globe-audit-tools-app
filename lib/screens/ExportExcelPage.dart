@@ -234,7 +234,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Excel exported successfully!\n$fileName"),
+            content: Text("Excel exported successfully\n$fileName"),
             backgroundColor: const Color(0xFF003E70),
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
