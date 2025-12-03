@@ -961,11 +961,19 @@ class _ManageTechnicianToolsScreenState
                   ),
                 ),
                 IconButton(
+                  //Share icon function
                   icon: const Icon(Icons.share, color: Colors.white, size: 20),
-                  onPressed: _sharePhoto, //share icon function
+                  onPressed: _sharePhoto, 
                   tooltip: 'Share Photo',
                 ),
+                  IconButton(
+                    //Refresh icon function
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    onPressed: _takePicture, //opens camera
+                    tooltip: 'Retake picture',
+                  ),
                 IconButton(
+                  //Close icon
                   icon: const Icon(Icons.close, color: Colors.white, size: 20),
                   onPressed: () {
                     setState(() {
@@ -1023,10 +1031,23 @@ class _ManageTechnicianToolsScreenState
                 ),
                 if (signatureUrl != null)
                   IconButton(
+                    //Refresh icon
                     icon: const Icon(Icons.refresh, color: Colors.white),
                     onPressed: _openSignaturePad,
-                    tooltip: 'Your Signature',
+                    tooltip: 'Add Signature',
                   ),
+                  IconButton(
+                  //Close icon
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  onPressed: () {
+                    setState(() {
+                    // hide card by clearing the signature
+                    widget.technician?['e_signature'] = null;
+                    });
+                  },
+                  tooltip: 'Close',
+                ),
+
               ],
             ),
           ),
