@@ -325,51 +325,6 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  // Future<bool> saveSignature({
-  //   required String technicianId,
-  //   required File imageFile,
-  // }) async {
-  //   final supabase = Supabase.instance.client;
-
-  //   // 🔍 DEBUG: Check authentication
-  //   final user = supabase.auth.currentUser;
-  //   debugPrint("Current user: ${user?.id}");
-  //   debugPrint("User role: ${user?.role}");
-
-  //   if (user == null) {
-  //     debugPrint("❌ User not authenticated!");
-  //     return false;
-  //   }
-
-  //   try {
-  //     final fileName =
-  //         "signature_${technicianId}_${DateTime.now().millisecondsSinceEpoch}.png";
-
-  //     final bytes = await imageFile.readAsBytes();
-
-  //     debugPrint("📤 Uploading to bucket: technician_signatures");
-  //     debugPrint("📄 Filename: $fileName");
-
-  //     await supabase.storage
-  //         .from('technician_signatures')
-  //         .uploadBinary(fileName, bytes);
-
-  //     final publicUrl = supabase.storage
-  //         .from('technician_signatures')
-  //         .getPublicUrl(fileName);
-
-  //     await supabase
-  //         .from('technicians')
-  //         .update({'e_signature': publicUrl})
-  //         .eq('id', technicianId);
-
-  //     return true;
-  //   } catch (e) {
-  //     debugPrint("❌ Error saving e-signature: $e");
-  //     return false;
-  //   }
-  // }
-
   Future<Uint8List> addNameToSignature(
     Uint8List signatureBytes,
     String name,
@@ -677,6 +632,44 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
+  Future<bool?> _showSaveChangesDialog() {
+    //Save changes before leaving the page
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Unsaved Changes'),
+          content: const Text(
+            'You have unsaved changes. Do you want to save before leaving?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false); // Don't leave, don't save
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(
+                  context,
+                ).pop(false); // Stay, let user save manually
+                _saveChanges(); // trigger save
+              },
+              child: const Text('Save'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(true); // Leave without saving
+              },
+              child: const Text('Discard', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   //Widgets Section
   Widget _buildToolsList() {
     if (_tools.isEmpty) {
@@ -963,15 +956,15 @@ class _ManageTechnicianToolsScreenState
                 IconButton(
                   //Share icon function
                   icon: const Icon(Icons.share, color: Colors.white, size: 20),
-                  onPressed: _sharePhoto, 
+                  onPressed: _sharePhoto,
                   tooltip: 'Share Photo',
                 ),
-                  IconButton(
-                    //Refresh icon function
-                    icon: const Icon(Icons.refresh, color: Colors.white),
-                    onPressed: _takePicture, //opens camera
-                    tooltip: 'Retake picture',
-                  ),
+                IconButton(
+                  //Refresh icon function
+                  icon: const Icon(Icons.refresh, color: Colors.white),
+                  onPressed: _takePicture, //opens camera
+                  tooltip: 'Retake picture',
+                ),
                 IconButton(
                   //Close icon
                   icon: const Icon(Icons.close, color: Colors.white, size: 20),
@@ -1036,18 +1029,17 @@ class _ManageTechnicianToolsScreenState
                     onPressed: _openSignaturePad,
                     tooltip: 'Add Signature',
                   ),
-                  IconButton(
+                IconButton(
                   //Close icon
                   icon: const Icon(Icons.close, color: Colors.white, size: 20),
                   onPressed: () {
                     setState(() {
-                    // hide card by clearing the signature
-                    widget.technician?['e_signature'] = null;
+                      // hide card by clearing the signature
+                      widget.technician?['e_signature'] = null;
                     });
                   },
                   tooltip: 'Close',
                 ),
-
               ],
             ),
           ),
@@ -1126,78 +1118,89 @@ class _ManageTechnicianToolsScreenState
 
   @override
   Widget build(BuildContext context) {
+    //main
     final technicianName = widget.technician?['name'] ?? 'Technician';
 
-    return Scaffold(
-      appBar: AppBar(title: Text("$technicianName's tools")),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _fetchTechnicianTools,
-              child: _buildToolsList(),
-            ),
-
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (_showScrollToTop) ...[
-            FloatingActionButton(
-              heroTag: 'scrollUp',
-              mini: true,
-              onPressed: () {
-                _scrollController.animateTo(
-                  0,
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOut,
-                );
-              },
-              backgroundColor: Colors.grey.shade900,
-              child: const Icon(Icons.arrow_upward, color: Colors.white),
-            ),
-            const SizedBox(height: 5),
-          ],
-
-          // Hide camera when _hasChanges = true
-          if (!_hasChanges) ...[
-            FloatingActionButton(
-              heroTag: 'camera',
-              onPressed: _takePicture,
-              backgroundColor: const Color(0xFF003E70),
-              child: const Icon(Icons.camera_alt, color: Colors.white),
-            ),
-            SizedBox(height: 5),
-            FloatingActionButton(
-              heroTag: 'signature',
-              onPressed: _openSignaturePad,
-              backgroundColor: const Color(0xFF003E70),
-              child: const Icon(Icons.edit, color: Colors.white),
-            ),
-          ],
-          if (_hasChanges) ...[
-            const SizedBox(height: 16),
-            FloatingActionButton.extended(
-              heroTag: 'save',
-              onPressed: _saving ? null : _saveChanges,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save, color: Colors.white),
-              label: Text(
-                _saving ? 'Saving...' : 'Save Changes',
-                style: const TextStyle(color: Colors.white),
+    return WillPopScope(
+      onWillPop: () async {
+        // Check for unsaved changes
+        if (_hasChanges) {
+          final shouldLeave = await _showSaveChangesDialog();
+          return shouldLeave ?? false; // true = allow pop, false = prevent
+        }
+        return true; // no unsaved changes, allow pop
+      },
+      child: Scaffold(
+        appBar: AppBar(title: Text("$technicianName's tools")),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _fetchTechnicianTools,
+                child: _buildToolsList(),
               ),
-              backgroundColor: const Color(0xFF003E70),
-            ),
+
+        floatingActionButton: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            if (_showScrollToTop) ...[
+              FloatingActionButton(
+                heroTag: 'scrollUp',
+                mini: true,
+                onPressed: () {
+                  _scrollController.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOut,
+                  );
+                },
+                backgroundColor: Colors.grey.shade900,
+                child: const Icon(Icons.arrow_upward, color: Colors.white),
+              ),
+              const SizedBox(height: 5),
+            ],
+
+            // Hide camera when _hasChanges = true
+            if (!_hasChanges) ...[
+              FloatingActionButton(
+                heroTag: 'camera',
+                onPressed: _takePicture,
+                backgroundColor: const Color(0xFF003E70),
+                child: const Icon(Icons.camera_alt, color: Colors.white),
+              ),
+              SizedBox(height: 5),
+              FloatingActionButton(
+                heroTag: 'signature',
+                onPressed: _openSignaturePad,
+                backgroundColor: const Color(0xFF003E70),
+                child: const Icon(Icons.edit, color: Colors.white),
+              ),
+            ],
+            if (_hasChanges) ...[
+              const SizedBox(height: 16),
+              FloatingActionButton.extended(
+                heroTag: 'save',
+                onPressed: _saving ? null : _saveChanges,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save, color: Colors.white),
+                label: Text(
+                  _saving ? 'Saving...' : 'Save Changes',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                backgroundColor: const Color(0xFF003E70),
+              ),
+            ],
           ],
-        ],
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

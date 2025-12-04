@@ -304,12 +304,13 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
               'Export Tools Audit Report',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 10),
-            const Text(
-              'Choose your preferred format',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 40),
+
+            // const SizedBox(height: 10),
+            // const Text(
+            //   'Choose your preferred format',
+            //   style: TextStyle(fontSize: 14, color: Colors.grey),
+            // ),
+            const SizedBox(height: 20),
 
             // Excel Export Card
             Card(
@@ -347,7 +348,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Editable spreadsheet with signature URLs',
+                              'Click here to export excel file',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
