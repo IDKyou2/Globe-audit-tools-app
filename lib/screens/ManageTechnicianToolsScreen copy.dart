@@ -11,14 +11,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/services.dart' show rootBundle, Uint8List;
 
 class ManageTechnicianToolsScreen extends StatefulWidget {
-  final String technicianId; // Add this
-
   final Map<String, dynamic>? technician;
-  const ManageTechnicianToolsScreen({
-    super.key,
-    this.technician,
-    required this.technicianId,
-  });
+  const ManageTechnicianToolsScreen({super.key, this.technician});
 
   @override
   State<ManageTechnicianToolsScreen> createState() =>
@@ -49,11 +43,6 @@ class _ManageTechnicianToolsScreenState
     penColor: Colors.black,
     exportBackgroundColor: Colors.white,
   );
-
-  final TextEditingController _remarksController = TextEditingController();
-  String? _existingRemark;
-  bool _isEditingRemark = false;
-
   @override
   void initState() {
     super.initState();
@@ -61,7 +50,6 @@ class _ManageTechnicianToolsScreenState
     _fetchCategories();
     _scrollController = ScrollController();
     _refreshTechnicianData();
-    _loadRemarks();
 
     _scrollController.addListener(() {
       if (_scrollController.offset > 200 && !_showScrollToTop) {
@@ -76,7 +64,6 @@ class _ManageTechnicianToolsScreenState
   void dispose() {
     _signatureController.dispose();
     _scrollController.dispose();
-    _remarksController.dispose();
     super.dispose();
   }
 
@@ -107,7 +94,12 @@ class _ManageTechnicianToolsScreenState
   Future<void> _fetchTechnicianTools() async {
     setState(() => _loading = true);
 
-    final technicianId = widget.technicianId; // use string directly
+    final technicianId = widget.technician?['id'];
+    if (technicianId == null) {
+      debugPrint('❌ No technician ID provided');
+      setState(() => _loading = false);
+      return;
+    }
 
     try {
       final allTools = await _supabase
@@ -159,8 +151,7 @@ class _ManageTechnicianToolsScreenState
   }
 
   Future<void> _saveChanges() async {
-    final technicianId = widget.technicianId; // always string
-
+    final technicianId = widget.technician?['id'];
     if (technicianId == null || _saving) return;
     setState(() => _saving = true);
 
@@ -181,40 +172,17 @@ class _ManageTechnicianToolsScreenState
         return;
       }
 
-      // Upsert the technician_tools table
       final updates = changedTools.map((tool) {
         return {
           'technician_id': technicianId,
           'tools_id': tool['tools_id'],
           'status': tool['status'],
-          // 'last_updated_at': DateTime.now().toIso8601String(),
-          'last_updated_at': DateTime.now()
-              .toUtc()
-              .toIso8601String(), // Explicit UTC
+          'last_updated_at': DateTime.now().toIso8601String(),
         };
       }).toList();
 
-      // await _supabase.from('technician_tools').upsert(updates);
-      await _supabase
-          .from('technician_tools')
-          .upsert(updates, onConflict: 'technician_id,tools_id');
+      await _supabase.from('technician_tools').upsert(updates);
 
-      // ----------------------------------------- AUDIT_LOGS TABLE ----------------------------------------
-      // Insert into audit table with date
-      // final today = DateTime.now();
-      // final auditInserts = changedTools.map((tool) {
-      //   return {
-      //     'technician_id': technicianId, // from technician_tools
-      //     'tools_id': tool['tools_id'],
-      //     'status': tool['status'],
-      //     'date_added': DateTime.now().toIso8601String().substring(0, 10),
-      //   };
-      // }).toList();
-
-      // // await _supabase.from('audit_logs').insert(auditInserts);
-      // await _supabase.from('audit_logs').upsert(auditInserts);
-
-      // Update local tool states
       for (var tool in _tools) {
         tool['original_status'] = tool['status'];
       }
@@ -296,8 +264,7 @@ class _ManageTechnicianToolsScreenState
     final fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
 
     try {
-      final technicianId = widget.technicianId; // always string
-
+      final technicianId = widget.technician?['id'];
       // Upload to the correct bucket
       await supabase.storage
           .from('technicians_pictures')
@@ -554,9 +521,7 @@ class _ManageTechnicianToolsScreenState
                           setDialogState(() => isSaving = true);
 
                           try {
-                            final technicianId =
-                                widget.technicianId; // always string
-
+                            final technicianId = widget.technician?['id'];
                             //Displays technician name
                             final technicianName =
                                 widget.technician?['name'] ?? "Technician";
@@ -649,8 +614,7 @@ class _ManageTechnicianToolsScreenState
   }
 
   Future<void> _refreshTechnicianData() async {
-    final technicianId = widget.technicianId; // always string
-
+    final technicianId = widget.technician?['id'];
     if (technicianId == null) return;
 
     try {
@@ -704,80 +668,6 @@ class _ManageTechnicianToolsScreenState
         );
       },
     );
-  }
-
-  Future<void> _saveRemarks() async {
-    if (_remarksController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please enter a remark")));
-      return;
-    }
-
-    setState(() => _loading = true);
-
-    try {
-      // 1️⃣ Check if a remark already exists
-      final existing = await _supabase
-          .from('technician_remarks')
-          .select()
-          .eq('technician_id', widget.technicianId) //get ID
-          .maybeSingle();
-
-      if (existing == null) {
-        // 2️⃣ Insert new remark if none exists
-        await _supabase.from('technician_remarks').insert({
-          'technician_id': widget.technicianId,
-          'remarks': _remarksController.text,
-        });
-
-        setState(() {
-          _loading = false;
-          _existingRemark = _remarksController.text;
-          _isEditingRemark = false;
-        });
-
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Remark added")));
-      } else {
-        // 3️⃣ Update existing remark
-        await _supabase
-            .from('technician_remarks')
-            .update({'remarks': _remarksController.text})
-            .eq('id', existing['id']);
-
-        setState(() {
-          _loading = false;
-          _existingRemark = _remarksController.text;
-          _isEditingRemark = false;
-        });
-
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Remark updated")));
-      }
-    } catch (e) {
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
-  }
-
-  Future<void> _loadRemarks() async {
-    final res = await _supabase
-        .from('technician_remarks')
-        .select('remarks')
-        .eq('technician_id', widget.technicianId)
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
-
-    setState(() {
-      _existingRemark = res?['remarks'];
-      _remarksController.text = _existingRemark ?? '';
-    });
   }
 
   //Widgets Section
@@ -835,47 +725,7 @@ class _ManageTechnicianToolsScreenState
         if (widget.technician?['e_signature'] != null && !_hasChanges)
           _showSignature(),
 
-        const SizedBox(height: 10),
-        //Text("Note:"),
-        if (_existingRemark != null && !_isEditingRemark) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(_existingRemark!, style: const TextStyle(fontSize: 14)),
-          ),
-          Align(
-            alignment: Alignment.center,
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() => _isEditingRemark = true);
-              },
-              // icon: const Icon(Icons.edit),
-              label: const Text("Edit"),
-            ),
-          ),
-        ]
-        /// 🔥 Editing Mode (TextFormField + Save)
-        else ...[
-          TextFormField(
-            controller: _remarksController,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Enter your remark here',
-            ),
-            maxLines: 3,
-          ),
-          const SizedBox(height: 10),
-          _loading
-              ? const CircularProgressIndicator()
-              : ElevatedButton(
-                  onPressed: _saveRemarks,
-                  child: const Text('Save'),
-                ),
-        ],
+        const SizedBox(height: 80),
       ],
     );
   }
@@ -1288,6 +1138,7 @@ class _ManageTechnicianToolsScreenState
                 onRefresh: _fetchTechnicianTools,
                 child: _buildToolsList(),
               ),
+
         floatingActionButton: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [

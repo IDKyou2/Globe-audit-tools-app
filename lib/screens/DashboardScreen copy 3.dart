@@ -20,6 +20,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   String? _loggedUserName;
 
+  List<dynamic> auditResults = [];
+  DateTime selectedDate = DateTime.now();
+
   @override
   void initState() {
     super.initState();
@@ -63,14 +66,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+          SnackBar(
+            content: const Text(
               'Logged out successfully.',
               style: TextStyle(
                 color: Colors.black,
                 fontWeight: FontWeight.w400,
               ),
             ),
+            //backgroundColor: Theme.of(context).colorScheme.primary,
             backgroundColor: Colors.white,
             behavior: SnackBarBehavior.floating,
           ),
@@ -238,13 +242,16 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  Map<String, int> technicianDefectiveCounts = {}; // name -> defective count
+
   int checkedTodayCount = 0;
-  int technicianCount = 0;
-  int totalToolsCount = 0;
-  int toolsOnhandCount = 0;
-  int toolsDefectiveCount = 0;
-  int techniciansInspectedCount = 0;
+  int technicianCount = 0; //Technicians totla
+  int totalToolsCount = 0; //Tools total
+  int toolsOnhandCount = 0; //Onhand total
+  int toolsDefectiveCount = 0; //Defective total
   bool isLoading = true;
+
+  List<dynamic> auditResults = [];
   DateTime selectedDate = DateTime.now();
 
   @override
@@ -258,27 +265,17 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() => isLoading = true);
 
     try {
-      // Reset to today's date
-      final today = DateTime.now();
-      selectedDate = today;
-
       final technicians = await supabase.from('technicians').select();
       final allTools = await supabase.from('tools').select();
-
-      // Fetch today's data
-      final startDate = DateTime(today.year, today.month, today.day);
-      final endDate = startDate.add(const Duration(days: 1));
-
       final technicianTools = await supabase
           .from('technician_tools')
-          .select('checked_at, status, last_updated_at, technician_id')
-          .gte('last_updated_at', startDate.toIso8601String())
-          .lt('last_updated_at', endDate.toIso8601String());
+          .select('checked_at, status');
 
       int onhandCount = 0;
       int defectiveCount = 0;
       int checkedToday = 0;
-      Set<String> inspectedTechnicianIds = {};
+
+      final today = DateTime.now();
 
       for (final tool in technicianTools) {
         final checkedAt = tool['checked_at'] != null
@@ -297,11 +294,6 @@ class _DashboardPageState extends State<DashboardPage> {
             checkedAt.day == today.day) {
           checkedToday++;
         }
-
-        // Track unique technicians who were inspected
-        if (tool['technician_id'] != null) {
-          inspectedTechnicianIds.add(tool['technician_id'].toString());
-        }
       }
 
       if (!mounted) return;
@@ -312,7 +304,6 @@ class _DashboardPageState extends State<DashboardPage> {
         toolsOnhandCount = onhandCount;
         toolsDefectiveCount = defectiveCount;
         checkedTodayCount = checkedToday;
-        techniciansInspectedCount = inspectedTechnicianIds.length;
         isLoading = false;
       });
     } catch (e) {
@@ -326,10 +317,41 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  // Future<void> filteredDate(DateTime date) async {
+  //   final supabase = Supabase.instance.client;
+
+  //   final startDate = DateTime(date.year, date.month, date.day);
+  //   final endDate = startDate.add(const Duration(days: 1));
+
+  //   try {
+  //     final response = await supabase
+  //         .from('technician_tools')
+  //         .select()
+  //         .gte('last_updated_at', startDate.toIso8601String())
+  //         .lt('last_updated_at', endDate.toIso8601String());
+
+  //     int onhand = 0;
+  //     int defective = 0;
+
+  //     for (final log in response) {
+  //       if (log['status'] == 'Onhand') onhand++;
+  //       if (log['status'] == 'Defective') defective++;
+  //     }
+
+  //     setState(() {
+  //       auditResults = response;
+  //       toolsOnhandCount = onhand;
+  //       toolsDefectiveCount = defective;
+  //     });
+  //   } catch (e) {
+  //     debugPrint("❌ Error fetching audit data: $e");
+  //   }
+  // }
+
   Future<void> filteredDate(DateTime date) async {
     final supabase = Supabase.instance.client;
 
-    // Keep date in LOCAL timezone to find the right audit
+    // Step 1: Try to get the nearest previous audit date
     final actualDate = await getNearestPreviousAuditDate(date);
 
     if (actualDate == null) {
@@ -337,68 +359,76 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
 
-    // Convert actualDate from UTC to local time
-    final localActualDate = actualDate.toLocal();
+    // Use the actual audit date found
+    //selectedDate = actualDate;
 
-    // Create date range in LOCAL timezone
     final startDate = DateTime(
-      localActualDate.year,
-      localActualDate.month,
-      localActualDate.day,
+      actualDate.year,
+      actualDate.month,
+      actualDate.day,
     );
     final endDate = startDate.add(const Duration(days: 1));
 
-    // Convert to UTC for the database query
-    final utcStartDate = startDate.toUtc();
-    final utcEndDate = endDate.toUtc();
-
-    debugPrint("📅 Local range: $startDate to $endDate");
-    debugPrint(
-      "📅 UTC range: ${utcStartDate.toIso8601String()} to ${utcEndDate.toIso8601String()}",
-    );
-
     final response = await supabase
         .from('technician_tools')
-        .select('status, technician_id')
-        .gte('last_updated_at', utcStartDate.toIso8601String())
-        .lt('last_updated_at', utcEndDate.toIso8601String());
+        .select()
+        .gte('last_updated_at', startDate.toIso8601String())
+        .lt('last_updated_at', endDate.toIso8601String());
 
     int onhand = 0;
     int defective = 0;
-    Set<String> inspectedTechnicianIds = {};
 
     for (final log in response) {
       if (log['status'] == 'Onhand') onhand++;
       if (log['status'] == 'Defective') defective++;
-
-      if (log['technician_id'] != null) {
-        inspectedTechnicianIds.add(log['technician_id'].toString());
-      }
     }
 
     setState(() {
+      auditResults = response;
       toolsOnhandCount = onhand;
       toolsDefectiveCount = defective;
-      techniciansInspectedCount = inspectedTechnicianIds.length;
     });
   }
+
+  // Future<void> _fetchDashboardByDate(DateTime date) async {
+  //   final supabase = Supabase.instance.client;
+  //   setState(() => isLoading = true);
+  //   try {
+  //     final dateString = DateFormat('yyyy-MM-dd').format(date);
+  //     final logs = await supabase
+  //         .from('tool_audit_logs')
+  //         .select()
+  //         .eq('audit_date', dateString);
+  //     int onhand = 0;
+  //     int defective = 0;
+  //     for (final log in logs) {
+  //       if (log['status'] == 'Onhand') onhand++;
+  //       if (log['status'] == 'Defective') defective++;
+  //     }
+  //     setState(() {
+  //       toolsOnhandCount = onhand;
+  //       toolsDefectiveCount = defective;
+  //       auditResults = logs;
+  //       isLoading = false;
+  //     });
+  //   } catch (e) {
+  //     debugPrint("Error fetching audit: $e");
+  //     setState(() => isLoading = false);
+  //   }
+  // }
 
   Future<DateTime?> getNearestPreviousAuditDate(DateTime date) async {
     final supabase = Supabase.instance.client;
 
-    // Convert local date to UTC for querying
-    final queryDate = date.toUtc();
-
     final response = await supabase
         .from('technician_tools')
-        .select('last_updated_at')
-        .lte('last_updated_at', queryDate.toIso8601String())
+        .select()
+        .lte('last_updated_at', date.toIso8601String())
         .order('last_updated_at', ascending: false)
         .limit(1);
 
     if (response.isEmpty) return null;
 
-    // Returns UTC datetime
     return DateTime.parse(response.first['last_updated_at']);
   }
 
@@ -425,6 +455,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     children: [
                       buildDateHeader(isDark),
                       const SizedBox(height: 20),
+                      //buildDashboardCards(isDark),
+                      //const SizedBox(height: 40),
                       buildPieChart(isDark),
                       const SizedBox(height: 30),
                     ],
@@ -456,7 +488,7 @@ class _DashboardPageState extends State<DashboardPage> {
               context: context,
               initialDate: selectedDate.isAfter(today) ? today : selectedDate,
               firstDate: DateTime(2023),
-              lastDate: today,
+              lastDate: today, // prevent future dates
             );
 
             if (picked != null) {
@@ -464,20 +496,113 @@ class _DashboardPageState extends State<DashboardPage> {
               filteredDate(picked);
             }
           },
-          child: const Text("Select Date"),
+          child: Text("Select Date"),
         ),
       ],
     );
   }
 
   Widget buildPieChart(bool isDark) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.45,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [Colors.grey.shade900, Colors.grey.shade800]
+              : [Colors.white, Colors.grey.shade50],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: PieChart(
+              PieChartData(
+                sectionsSpace: 3,
+                centerSpaceRadius:
+                    MediaQuery.of(context).size.width * 0.15, // ⬅ responsive
+                startDegreeOffset: -90,
+                sections: [
+                  _buildPieSection(
+                    toolsOnhandCount.toDouble(),
+                    Colors.green,
+                    Icons.check_circle,
+                  ),
+                  _buildPieSection(
+                    toolsDefectiveCount.toDouble(),
+                    Colors.red,
+                    Icons.warning,
+                  ),
+                  _buildPieSection(
+                    technicianCount.toDouble(),
+                    Colors.orange,
+                    Icons.engineering,
+                  ),
+                  _buildPieSection(
+                    totalToolsCount.toDouble(),
+                    Colors.grey,
+                    Icons.build,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16), // ⬅ spacing between chart and legend
+
+          Wrap(
+            spacing: 10,
+            runSpacing: 5,
+            alignment: WrapAlignment.center,
+            children: [
+              _LegendItem('Overall Tools On-hand', Colors.green),
+              _LegendItem('Overall Defective Tools', Colors.red),
+              _LegendItem('Total Technicians', Colors.orange),
+              _LegendItem('Total Tools', Colors.grey),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  PieChartSectionData _buildPieSection(
+    double value,
+    Color color,
+    IconData icon,
+  ) {
+    return PieChartSectionData(
+      value: value,
+      title: '${value.toInt()}',
+      color: color,
+      radius: 65,
+      titleStyle: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+      ),
+      badgeWidget: _ChartBadge(icon: icon, color: color),
+      badgePositionPercentageOffset: 1.4,
+    );
+  }
+
+  Widget buildDashboardCards(bool isDark) {
     return GridView.count(
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
       crossAxisCount: 2,
       crossAxisSpacing: 16,
       mainAxisSpacing: 16,
-      childAspectRatio: 1.1,
       children: [
         _DashboardCard(
           title: 'Tools On-hand',
@@ -492,19 +617,13 @@ class _DashboardPageState extends State<DashboardPage> {
           color: Colors.red,
         ),
         _DashboardCard(
-          title: 'Technicians Inspected',
-          count: techniciansInspectedCount.toString(),
-          icon: Icons.fact_check,
-          color: Colors.blue,
-        ),
-        _DashboardCard(
           title: 'Total Technicians',
           count: technicianCount.toString(),
           icon: Icons.engineering,
           color: Colors.orange,
         ),
         _DashboardCard(
-          title: 'Overall Tools Total',
+          title: 'Total Tools',
           count: totalToolsCount.toString(),
           icon: Icons.build,
           color: Colors.grey,
@@ -560,20 +679,79 @@ class _DashboardCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.white70,
-              ),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.white70,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ChartBadge extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _ChartBadge({required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 8,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Icon(icon, size: 20, color: color),
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final String label;
+  final Color color;
+  //final int count;
+
+  const _LegendItem(
+    this.label,
+    this.color,
+    // this.count
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+      ],
     );
   }
 }

@@ -165,32 +165,6 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         }
       }
 
-      // Insert empty row spacing
-      sheet.appendRow([]);
-
-      // Pictures row
-      final picturesRowIndex = sheet.maxRows;
-      sheet.appendRow([
-        TextCellValue("Pictures"),
-        ...techNames.map((name) {
-          final pictureUrl = techPictures[name]; // <-- We must get this from DB
-          if (pictureUrl != null && pictureUrl.isNotEmpty) {
-            return TextCellValue(pictureUrl);
-          } else {
-            return TextCellValue("No picture");
-          }
-        }),
-      ]);
-      // Make "Pictures" bold
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: picturesRowIndex,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
       // -----------------------------
       // SIGNATURE ROW (existing code)
       // -----------------------------
@@ -215,6 +189,33 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                 CellIndex.indexByColumnRow(
                   columnIndex: 0,
                   rowIndex: signatureRowIndex,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
+
+      // Insert empty row spacing
+      sheet.appendRow([]);
+
+      // Pictures row
+      final picturesRowIndex = sheet.maxRows;
+      sheet.appendRow([
+        TextCellValue("Pictures"),
+        ...techNames.map((name) {
+          final pictureUrl = techPictures[name]; // <-- We must get this from DB
+          if (pictureUrl != null && pictureUrl.isNotEmpty) {
+            return TextCellValue(pictureUrl);
+          } else {
+            return TextCellValue("No picture");
+          }
+        }),
+      ]);
+      // Make "Pictures" bold
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: picturesRowIndex,
                 ),
               )
               .cellStyle =

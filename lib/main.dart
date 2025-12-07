@@ -48,10 +48,25 @@ Future<void> main() async {
       GoRoute(
         path: '/view-tools',
         builder: (context, state) {
+          // Ensure state.extra is a Map
           final technician = state.extra as Map<String, dynamic>?;
-          return ManageTechnicianToolsScreen(technician: technician);
+
+          if (technician == null || technician['id'] == null) {
+            return Scaffold(
+              body: Center(child: Text('❌ No technician ID provided')),
+            );
+          }
+
+          final technicianId = technician['id'].toString(); // convert to string
+
+          return ManageTechnicianToolsScreen(
+            technicianId: technicianId,
+            technician:
+                technician, // optional if your screen needs the full map
+          );
         },
       ),
+
       GoRoute(
         path: '/add-tools',
         builder: (context, state) => const AddNewToolPage(),
