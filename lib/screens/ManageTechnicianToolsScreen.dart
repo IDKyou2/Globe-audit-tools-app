@@ -171,12 +171,12 @@ class _ManageTechnicianToolsScreenState
 
       if (changedTools.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No changes to save'),
-            duration: Duration(milliseconds: 800),
-          ),
-        );
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   const SnackBar(
+        //     content: Text('No changes to save'),
+        //     duration: Duration(milliseconds: 800),
+        //   ),
+        // );
         setState(() => _saving = false);
         return;
       }
@@ -780,6 +780,64 @@ class _ManageTechnicianToolsScreenState
     });
   }
 
+  Future<void> _clearAllStatuses() async {
+    final technicianId = widget.technicianId;
+
+    if (technicianId.isEmpty) return;
+
+    try {
+      await _supabase
+          .from('technician_tools')
+          .update({'status': 'None'})
+          .eq('technician_id', technicianId);
+
+      // Update UI side
+      setState(() {
+        for (var tool in _tools) {
+          tool['status'] = 'None';
+        }
+        _checkForChanges();
+      });
+
+      Fluttertoast.showToast(msg: "All tools reset to None");
+    } catch (e) {
+      print("Error on _clearAllStatuses: $e");
+
+      // Fluttertoast.showToast(
+      //   msg: "Error resetting: $e",
+      //   backgroundColor: Colors.red,
+      // );
+    }
+  }
+
+  Future<bool> showConfirmationDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+    String confirmText = "Confirm",
+    String cancelText = "Cancel",
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(cancelText),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(confirmText),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   //Widgets Section
   Widget _buildToolsList() {
     if (_tools.isEmpty) {
@@ -797,6 +855,11 @@ class _ManageTechnicianToolsScreenState
               'Tools & Requirements',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
             TextButton.icon(
               onPressed: () {
                 final allExpanded =
@@ -814,16 +877,36 @@ class _ManageTechnicianToolsScreenState
                     : Icons.unfold_more,
               ),
               label: Text(
+                style: TextStyle(fontSize: 12),
                 _expandedCategories.values.isNotEmpty &&
                         _expandedCategories.values.every((e) => e)
                     ? 'Collapse All'
                     : 'Expand All',
               ),
             ),
+
+            TextButton.icon(
+              // ----------------------------------------------------- Clear All Button ------------------------------------
+              onPressed: () async {
+                bool confirmed = await showConfirmationDialog(
+                  context: context,
+                  title: "Clear All Tools",
+                  message:
+                      "Are you sure you want to reset all tool statuses to None?",
+                  confirmText: "Clear All",
+                  cancelText: "Cancel",
+                );
+
+                if (confirmed) {
+                  _clearAllStatuses();
+                  await _saveChanges();
+                  // Fluttertoast.showToast(msg: "All statuses cleared");
+                }
+              },
+              label: const Text("Clear All", style: TextStyle(fontSize: 12)),
+            ),
           ],
         ),
-
-        const SizedBox(height: 10),
 
         // 🔥 Dynamically display ALL categories from Supabase
         ..._categories.map((cat) => _buildCategoryTools(cat)).toList(),
@@ -836,6 +919,7 @@ class _ManageTechnicianToolsScreenState
           _showSignature(),
 
         const SizedBox(height: 10),
+
         //Text("Note:"),
         if (_existingRemark != null && !_isEditingRemark) ...[
           Container(
@@ -868,7 +952,9 @@ class _ManageTechnicianToolsScreenState
             ),
             maxLines: 3,
           ),
+
           const SizedBox(height: 10),
+
           _loading
               ? const CircularProgressIndicator()
               : ElevatedButton(
