@@ -34,11 +34,37 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
     try {
       final supabase = Supabase.instance.client;
 
+      // final rows = await supabase.from('technician_tools').select('''
+      //   technicians:technicians!technician_tools_technician_id_fkey(name, updated_at, e_signature,pictures),
+      //   tools:tools!technician_tools_tools_id_fkey(name, category),
+      //   status
+      // ''');
+
+      // final techMap = <String, DateTime>{};
+      // final techSignatures = <String, String?>{};
+      // final techPictures = <String, String?>{};
+
+      // for (final r in rows) {
+      //   final name = r['technicians']['name'];
+      //   final createdAt = DateTime.parse(r['technicians']['updated_at']);
+      //   final signature = r['technicians']['e_signature'];
+      //   final picture = r['technicians']['pictures']; // <-- Add this!
+
+      //   techMap[name] = createdAt;
+      //   techSignatures[name] = signature;
+      //   techPictures[name] = picture; // <-- Store picture URL
+      // }
+
       final rows = await supabase.from('technician_tools').select('''
-      technicians:technicians!technician_tools_technician_id_fkey(name, updated_at, e_signature,pictures),
-      tools:tools!technician_tools_tools_id_fkey(name, category),
-      status
-    ''');
+  technicians:technicians!technician_tools_technician_id_fkey(
+    name, 
+    e_signature,
+    pictures
+  ),
+  tools:tools!technician_tools_tools_id_fkey(name, category),
+  status,
+  last_updated_at
+''');
 
       final techMap = <String, DateTime>{};
       final techSignatures = <String, String?>{};
@@ -46,13 +72,16 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
       for (final r in rows) {
         final name = r['technicians']['name'];
-        final createdAt = DateTime.parse(r['technicians']['updated_at']);
+        final createdAt = DateTime.parse(r['last_updated_at']); // <-- NEW
         final signature = r['technicians']['e_signature'];
-        final picture = r['technicians']['pictures']; // <-- Add this!
+        final picture = r['technicians']['pictures'];
 
-        techMap[name] = createdAt;
-        techSignatures[name] = signature;
-        techPictures[name] = picture; // <-- Store picture URL
+        // Store latest only
+        if (!techMap.containsKey(name) || createdAt.isAfter(techMap[name]!)) {
+          techMap[name] = createdAt;
+          techSignatures[name] = signature;
+          techPictures[name] = picture;
+        }
       }
 
       final techNames = techMap.keys.toList()
@@ -256,6 +285,264 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
     } finally {
       setState(() => _exporting = false);
     }
+  }
+
+  // Future<void> exportExcel() async {
+  //   // Request storage permission
+  //   final status = await Permission.manageExternalStorage.request();
+  //   if (!status.isGranted) {
+  //     Fluttertoast.showToast(msg: "Storage permission denied");
+  //     return;
+  //   }
+
+  //   setState(() => _exporting = true);
+
+  //   try {
+  //     final supabase = Supabase.instance.client;
+
+  //     final rows = await supabase.from('technician_tools').select('''
+  //     technicians:technicians!technician_tools_technician_id_fkey(name, updated_at, e_signature,pictures),
+  //     tools:tools!technician_tools_tools_id_fkey(name, category),
+  //     status
+  //   ''');
+
+  //     final techMap = <String, DateTime>{};
+  //     final techSignatures = <String, String?>{};
+  //     final techPictures = <String, String?>{};
+
+  //     for (final r in rows) {
+  //       final name = r['technicians']['name'];
+  //       final createdAt = DateTime.parse(r['technicians']['updated_at']);
+  //       final signature = r['technicians']['e_signature'];
+  //       final picture = r['technicians']['pictures']; // <-- Add this!
+
+  //       techMap[name] = createdAt;
+  //       techSignatures[name] = signature;
+  //       techPictures[name] = picture; // <-- Store picture URL
+  //     }
+
+  //     final techNames = techMap.keys.toList()
+  //       ..sort((a, b) => techMap[a]!.compareTo(techMap[b]!));
+
+  //     final categorizedTools = <String, Set<String>>{};
+  //     for (final r in rows) {
+  //       final tool = r['tools']['name'];
+  //       final category = r['tools']['category'] ?? "Uncategorized";
+
+  //       categorizedTools.putIfAbsent(category, () => <String>{});
+  //       categorizedTools[category]!.add(tool);
+  //     }
+
+  //     final sortedCategories = categorizedTools.keys.toList()..sort();
+
+  //     final table = <String, Map<String, String>>{};
+  //     for (final category in sortedCategories) {
+  //       for (final tool in categorizedTools[category]!.toList()..sort()) {
+  //         table[tool] = {for (var tech in techNames) tech: "None"};
+  //       }
+  //     }
+
+  //     for (final r in rows) {
+  //       final tech = r['technicians']['name'];
+  //       final tool = r['tools']['name'];
+  //       final status = r['status'] ?? "None";
+
+  //       table[tool]![tech] = status;
+  //     }
+
+  //     final excel = Excel.createExcel();
+  //     final boldStyle = CellStyle(
+  //       bold: true,
+  //       fontFamily: getFontFamily(FontFamily.Arial),
+  //     );
+
+  //     final defectiveStyle = CellStyle(
+  //       bold: true,
+  //       fontColorHex: ExcelColor.red,
+  //       fontFamily: getFontFamily(FontFamily.Arial),
+  //     );
+
+  //     final missingStyle = CellStyle(
+  //       bold: true,
+  //       fontColorHex: ExcelColor.orange,
+  //       fontFamily: getFontFamily(FontFamily.Arial),
+  //     );
+
+  //     final onhandStyle = CellStyle(
+  //       bold: true,
+  //       fontColorHex: ExcelColor.green900,
+  //       fontFamily: getFontFamily(FontFamily.Arial),
+  //     );
+
+  //     final now = DateTime.now();
+  //     final sheet = excel['Sheet1'];
+
+  //     sheet.appendRow([
+  //       TextCellValue("Tools"),
+  //       ...techNames.map((t) => TextCellValue(t)),
+  //     ]);
+
+  //     for (var col = 0; col <= techNames.length; col++) {
+  //       sheet
+  //               .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+  //               .cellStyle =
+  //           boldStyle;
+  //     }
+
+  //     for (final category in sortedCategories) {
+  //       final headerRow = sheet.maxRows;
+
+  //       sheet.appendRow([TextCellValue(category)]);
+  //       sheet
+  //               .cell(
+  //                 CellIndex.indexByColumnRow(
+  //                   columnIndex: 0,
+  //                   rowIndex: headerRow,
+  //                 ),
+  //               )
+  //               .cellStyle =
+  //           boldStyle;
+
+  //       final sortedTools = categorizedTools[category]!.toList()..sort();
+
+  //       for (final tool in sortedTools) {
+  //         final rowIndex = sheet.maxRows;
+
+  //         sheet.appendRow([
+  //           TextCellValue(tool),
+  //           ...techNames.map((tech) => TextCellValue(table[tool]![tech]!)),
+  //         ]);
+
+  //         for (var col = 1; col <= techNames.length; col++) {
+  //           final cell = sheet.cell(
+  //             CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex),
+  //           );
+
+  //           final value = cell.value.toString();
+
+  //           if (value == "Defective") {
+  //             cell.cellStyle = defectiveStyle;
+  //           } else if (value == "Missing") {
+  //             cell.cellStyle = missingStyle;
+  //           } else if (value == "Onhand") {
+  //             cell.cellStyle = onhandStyle;
+  //           }
+  //         }
+  //       }
+  //     }
+
+  //     // -----------------------------
+  //     // SIGNATURE ROW (existing code)
+  //     // -----------------------------
+
+  //     // Signatures row
+  //     final signatureRowIndex = sheet.maxRows;
+  //     sheet.appendRow([
+  //       TextCellValue("Signatures"),
+  //       ...techNames.map((name) {
+  //         final signatureUrl = techSignatures[name];
+  //         if (signatureUrl != null && signatureUrl.isNotEmpty) {
+  //           return TextCellValue(signatureUrl);
+  //         } else {
+  //           return TextCellValue("No signature");
+  //         }
+  //       }),
+  //     ]);
+
+  //     // Make "Signatures" bold
+  //     sheet
+  //             .cell(
+  //               CellIndex.indexByColumnRow(
+  //                 columnIndex: 0,
+  //                 rowIndex: signatureRowIndex,
+  //               ),
+  //             )
+  //             .cellStyle =
+  //         boldStyle;
+
+  //     // Insert empty row spacing
+  //     sheet.appendRow([]);
+
+  //     // Pictures row
+  //     final picturesRowIndex = sheet.maxRows;
+  //     sheet.appendRow([
+  //       TextCellValue("Pictures"),
+  //       ...techNames.map((name) {
+  //         final pictureUrl = techPictures[name]; // <-- We must get this from DB
+  //         if (pictureUrl != null && pictureUrl.isNotEmpty) {
+  //           return TextCellValue(pictureUrl);
+  //         } else {
+  //           return TextCellValue("No picture");
+  //         }
+  //       }),
+  //     ]);
+  //     // Make "Pictures" bold
+  //     sheet
+  //             .cell(
+  //               CellIndex.indexByColumnRow(
+  //                 columnIndex: 0,
+  //                 rowIndex: picturesRowIndex,
+  //               ),
+  //             )
+  //             .cellStyle =
+  //         boldStyle;
+
+  //     final dir = Directory("/storage/emulated/0/Download");
+  //     final fileName = "Tools-Audit-${now.month}-${now.day}-${now.year}.xlsx";
+  //     final file = File("${dir.path}/$fileName");
+
+  //     await file.writeAsBytes(excel.encode()!);
+
+  //     setState(() {
+  //       _lastExportedFilePath = file.path;
+  //       _lastExportType = 'Excel';
+  //     });
+
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(
+  //           content: Text("Excel exported successfully\n$fileName"),
+  //           backgroundColor: const Color(0xFF003E70),
+  //           duration: const Duration(seconds: 4),
+  //           action: SnackBarAction(
+  //             label: 'VIEW',
+  //             textColor: Colors.white,
+  //             onPressed: () => _openFile(file.path),
+  //           ),
+  //         ),
+  //       );
+  //     }
+  //   } catch (e) {
+  //     debugPrint("Export error: $e");
+  //     if (mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+  //       );
+  //     }
+  //   } finally {
+  //     setState(() => _exporting = false);
+  //   }
+  // }
+
+  Future<List<dynamic>> fetchTodayRows() async {
+    final supabase = Supabase.instance.client;
+
+    // Convert device date to midnight start & end (local time)
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    // Convert to ISO8601 for Supabase filter
+    final startIso = startOfDay.toUtc().toIso8601String();
+    final endIso = endOfDay.toUtc().toIso8601String();
+
+    final rows = await supabase
+        .from('technician_tools')
+        .select()
+        .gte('checked_at', startIso)
+        .lt('checked_at', endIso);
+
+    return rows;
   }
 
   Future<void> _openFile(String filePath) async {
