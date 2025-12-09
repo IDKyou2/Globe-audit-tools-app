@@ -901,6 +901,7 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
       children: groupedTools.entries.expand((entry) {
         final categoryName = entry.key;
         final toolsInCategory = entry.value;
+        final toolsCount = toolsInCategory.length; // 👈 count tools here
 
         return [
           Padding(
@@ -908,21 +909,24 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                // CATEGORY NAME + COUNT
                 Text(
-                  categoryName,
+                  "$categoryName ($toolsCount)", // 👈 added count
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: isDarkMode ? Colors.white : Colors.black87,
                   ),
                 ),
+
+                // Edit + Delete buttons
                 Row(
                   children: [
                     IconButton(
                       icon: const Icon(
                         Icons.edit,
                         size: 20,
-                        color: Color(0xFF003E70), //blue
+                        color: Color(0xFF003E70),
                       ),
                       onPressed: () => editCategory(categoryName),
                       tooltip: 'Edit Category',
@@ -941,6 +945,8 @@ class _AddNewToolPageState extends State<AddNewToolPage> {
               ],
             ),
           ),
+
+          // List of tools
           ...toolsInCategory.map((tool) => _buildToolCard(tool)),
         ];
       }).toList(),

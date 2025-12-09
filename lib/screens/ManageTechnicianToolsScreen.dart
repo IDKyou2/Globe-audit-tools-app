@@ -10,6 +10,13 @@ import 'package:signature/signature.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart' show rootBundle, Uint8List;
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///
+///
+///                                      WORKING COPY
+///
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 class ManageTechnicianToolsScreen extends StatefulWidget {
   final String technicianId; // Add this
 
@@ -613,9 +620,17 @@ class _ManageTechnicianToolsScreenState
                               widget.technician?['e_signature'] = publicUrl;
                             });
 
-                            Fluttertoast.showToast(
-                              msg: "Signature saved!",
-                              backgroundColor: Colors.green,
+                            // Fluttertoast.showToast(
+                            //   msg: "Signature saved!",
+                            //   backgroundColor: Colors.green,
+                            // );
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                //saved to database
+                                content: Text('Signature saved.'),
+                                duration: Duration(seconds: 2),
+                              ),
                             );
                           } catch (e) {
                             Fluttertoast.showToast(
@@ -739,7 +754,7 @@ class _ManageTechnicianToolsScreenState
 
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("Remark added")));
+        ).showSnackBar(const SnackBar(content: Text("Remark added.")));
       } else {
         // 3️⃣ Update existing remark
         await _supabase
@@ -1056,6 +1071,7 @@ class _ManageTechnicianToolsScreenState
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
+
                   Expanded(
                     flex: 4,
                     child: Row(
@@ -1103,6 +1119,7 @@ class _ManageTechnicianToolsScreenState
                   horizontal: 16,
                   vertical: 8,
                 ),
+
                 child: Row(
                   children: [
                     Expanded(
@@ -1112,6 +1129,7 @@ class _ManageTechnicianToolsScreenState
                         style: const TextStyle(fontSize: 14),
                       ),
                     ),
+
                     Expanded(
                       flex: 4,
                       child: Row(

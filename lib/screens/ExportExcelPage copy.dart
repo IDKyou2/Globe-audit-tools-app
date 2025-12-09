@@ -8,16 +8,6 @@ import 'package:excel/excel.dart';
 import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///
-///
-///
-// ---------------------------------- EXPORT ONLY TODAYS INSPECTED TECHNICIANS --------------------------
-///
-///
-///
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 class ExportOptionsPage extends StatefulWidget {
   const ExportOptionsPage({super.key});
 
@@ -29,14 +19,6 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
   bool _exporting = false;
   String? _lastExportedFilePath;
   String? _lastExportType;
-
-  bool isToday(DateTime date) {
-    //helper to check if a DateTime is today
-    final now = DateTime.now();
-    return date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
-  }
 
   Future<void> exportExcel() async {
     // Request storage permission
@@ -51,7 +33,16 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
     try {
       final supabase = Supabase.instance.client;
-      // ------------------------------- EXPORT ALL TECHNICIANS, LATEST UPDATED DISPLAY AT LAST --------------------------
+
+      /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      ///
+      ///
+      ///
+      //                         EXPORT ALL TECHNICIANS, LATEST UPDATED DISPLAY AT LAST                        
+      ///
+      ///
+      ///
+      ////////////////////////////////////////////////////////////////////////////////////////////////////////////
       final rows = await supabase.from('technician_tools').select('''
         technicians:technicians!technician_tools_technician_id_fkey(
           name,
@@ -75,20 +66,11 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         final signature = r['technicians']['e_signature'];
         final picture = r['technicians']['pictures'];
 
-        // if (!techMap.containsKey(name) || createdAt.isAfter(techMap[name]!)) {
-        //   // Store latest only
-        //   techMap[name] = createdAt;
-        //   techSignatures[name] = signature;
-        //   techPictures[name] = picture;
-        // }
-
-        if (isToday(createdAt)) {
-          // Only include technicians whose last_updated_at is today
-          if (!techMap.containsKey(name) || createdAt.isAfter(techMap[name]!)) {
-            techMap[name] = createdAt;
-            techSignatures[name] = signature;
-            techPictures[name] = picture;
-          }
+        // Store latest only
+        if (!techMap.containsKey(name) || createdAt.isAfter(techMap[name]!)) {
+          techMap[name] = createdAt;
+          techSignatures[name] = signature;
+          techPictures[name] = picture;
         }
       }
 

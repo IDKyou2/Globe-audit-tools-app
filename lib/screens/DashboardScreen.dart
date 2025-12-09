@@ -9,6 +9,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'TechniciansScreen.dart';
 import '../main.dart';
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///
+///
+///                                 BOXED DASHBOARD, WORKING SELECT DATE BUTTON
+///
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -258,47 +265,45 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() => isLoading = true);
 
     try {
-      // Reset to today's date
       final today = DateTime.now();
-      selectedDate = today;
+
+      // Build local day range
+      final startLocal = DateTime(today.year, today.month, today.day);
+      final endLocal = startLocal.add(const Duration(days: 1));
+
+      // Convert LOCAL → UTC for Supabase query
+      final startUTC = startLocal.toUtc();
+      final endUTC = endLocal.toUtc();
 
       final technicians = await supabase.from('technicians').select();
       final allTools = await supabase.from('tools').select();
 
-      // Fetch today's data
-      final startDate = DateTime(today.year, today.month, today.day);
-      final endDate = startDate.add(const Duration(days: 1));
-
       final technicianTools = await supabase
           .from('technician_tools')
           .select('checked_at, status, last_updated_at, technician_id')
-          .gte('last_updated_at', startDate.toIso8601String())
-          .lt('last_updated_at', endDate.toIso8601String());
+          .gte('last_updated_at', startUTC.toIso8601String())
+          .lt('last_updated_at', endUTC.toIso8601String());
 
       int onhandCount = 0;
       int defectiveCount = 0;
-      int checkedToday = 0;
+      int checkedCountForDate = 0;
       Set<String> inspectedTechnicianIds = {};
 
       for (final tool in technicianTools) {
         final checkedAt = tool['checked_at'] != null
-            ? DateTime.parse(tool['checked_at'])
+            ? DateTime.parse(tool['checked_at']).toLocal()
             : null;
 
-        if (tool['status'] == 'Onhand') {
-          onhandCount++;
-        } else if (tool['status'] == 'Defective') {
-          defectiveCount++;
-        }
+        if (tool['status'] == 'Onhand') onhandCount++;
+        if (tool['status'] == 'Defective') defectiveCount++;
 
         if (checkedAt != null &&
             checkedAt.year == today.year &&
             checkedAt.month == today.month &&
             checkedAt.day == today.day) {
-          checkedToday++;
+          checkedCountForDate++;
         }
 
-        // Track unique technicians who were inspected
         if (tool['technician_id'] != null) {
           inspectedTechnicianIds.add(tool['technician_id'].toString());
         }
@@ -311,7 +316,7 @@ class _DashboardPageState extends State<DashboardPage> {
         totalToolsCount = allTools.length;
         toolsOnhandCount = onhandCount;
         toolsDefectiveCount = defectiveCount;
-        checkedTodayCount = checkedToday;
+        checkedTodayCount = checkedCountForDate;
         techniciansInspectedCount = inspectedTechnicianIds.length;
         isLoading = false;
       });
@@ -326,21 +331,42 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  Future<void> filteredDate(DateTime date) async {
+  Future<void> filteredDate(DateTime pickedDate) async {
     final supabase = Supabase.instance.client;
 
-    // Keep date in LOCAL timezone to find the right audit
-    final actualDate = await getNearestPreviousAuditDate(date);
+    // Find the nearest audit date equal or before pickedDate
+    final actualDate = await getNearestPreviousAuditDate(pickedDate);
 
     if (actualDate == null) {
-      debugPrint("⚠ No audit logs exist at all.");
+      // No audit found at all
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("No Data Found"),
+            content: Text(
+              "There are no audit logs on or before "
+              "${DateFormat('MMMM dd, yyyy').format(pickedDate)}.",
+            ),
+            actions: [
+              TextButton(
+                child: const Text("OK"),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
       return;
     }
 
-    // Convert actualDate from UTC to local time
+    // Convert UTC from database → LOCAL time
     final localActualDate = actualDate.toLocal();
 
-    // Create date range in LOCAL timezone
+    // Update selected date in UI to reflect the actual audit date
+    setState(() => selectedDate = localActualDate);
+
+    // Build local day range
     final startDate = DateTime(
       localActualDate.year,
       localActualDate.month,
@@ -348,58 +374,65 @@ class _DashboardPageState extends State<DashboardPage> {
     );
     final endDate = startDate.add(const Duration(days: 1));
 
-    // Convert to UTC for the database query
+    // Convert LOCAL → UTC for Supabase query
     final utcStartDate = startDate.toUtc();
     final utcEndDate = endDate.toUtc();
 
-    debugPrint("📅 Local range: $startDate to $endDate");
-    debugPrint(
-      "📅 UTC range: ${utcStartDate.toIso8601String()} to ${utcEndDate.toIso8601String()}",
-    );
-
-    final response = await supabase
+    final logs = await supabase
         .from('technician_tools')
-        .select('status, technician_id')
+        .select('status, technician_id, checked_at')
         .gte('last_updated_at', utcStartDate.toIso8601String())
         .lt('last_updated_at', utcEndDate.toIso8601String());
 
     int onhand = 0;
     int defective = 0;
+    int checked = 0;
     Set<String> inspectedTechnicianIds = {};
 
-    for (final log in response) {
+    for (final log in logs) {
       if (log['status'] == 'Onhand') onhand++;
       if (log['status'] == 'Defective') defective++;
+
+      if (log['checked_at'] != null) {
+        final checkedAt = DateTime.parse(log['checked_at']).toLocal();
+        if (checkedAt.year == localActualDate.year &&
+            checkedAt.month == localActualDate.month &&
+            checkedAt.day == localActualDate.day) {
+          checked++;
+        }
+      }
 
       if (log['technician_id'] != null) {
         inspectedTechnicianIds.add(log['technician_id'].toString());
       }
     }
 
+    if (!mounted) return;
+
     setState(() {
       toolsOnhandCount = onhand;
       toolsDefectiveCount = defective;
       techniciansInspectedCount = inspectedTechnicianIds.length;
+      checkedTodayCount = checked; // now correct for selected date
     });
   }
 
-  Future<DateTime?> getNearestPreviousAuditDate(DateTime date) async {
+  Future<DateTime?> getNearestPreviousAuditDate(DateTime pickedDate) async {
     final supabase = Supabase.instance.client;
 
-    // Convert local date to UTC for querying
-    final queryDate = date.toUtc();
+    // Convert pickedDate (LOCAL) → UTC for query
+    final queryDateUTC = pickedDate.toUtc();
 
     final response = await supabase
         .from('technician_tools')
         .select('last_updated_at')
-        .lte('last_updated_at', queryDate.toIso8601String())
+        .lte('last_updated_at', queryDateUTC.toIso8601String())
         .order('last_updated_at', ascending: false)
         .limit(1);
 
     if (response.isEmpty) return null;
 
-    // Returns UTC datetime
-    return DateTime.parse(response.first['last_updated_at']);
+    return DateTime.parse(response.first['last_updated_at']); // returns UTC
   }
 
   @override
@@ -407,7 +440,11 @@ class _DashboardPageState extends State<DashboardPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return RefreshIndicator(
-      onRefresh: _fetchDashboardData,
+      onRefresh: () async {
+        final today = DateTime.now();
+        setState(() => selectedDate = today);
+        await filteredDate(today);
+      },
       child: SafeArea(
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -424,7 +461,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       buildDateHeader(isDark),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
                       buildPieChart(isDark),
                       const SizedBox(height: 30),
                     ],
@@ -436,18 +473,26 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget buildDateHeader(bool isDark) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Date: ${DateFormat('MMMM dd, yyyy').format(selectedDate)}",
-          style: TextStyle(
-            fontFamily: 'Roboto',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
+        // Last audit date text
+        Row(
+          children: [
+            Text(
+              "Last audit date: ${DateFormat('MMMM dd, yyyy').format(selectedDate)}",
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
+
+        const SizedBox(width: 5),
+
         ElevatedButton(
           onPressed: () async {
             final today = DateTime.now();
@@ -464,8 +509,21 @@ class _DashboardPageState extends State<DashboardPage> {
               filteredDate(picked);
             }
           },
-          child: const Text("Select Date"),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            minimumSize: const Size(85, 30),
+            textStyle: const TextStyle(fontSize: 13),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Text("Select Date"),
+              SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down, size: 18),
+            ],
+          ),
         ),
+        // const SizedBox(height: 10),
       ],
     );
   }

@@ -9,6 +9,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'TechniciansScreen.dart';
 import '../main.dart';
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///
+///
+///                                 BOXED DASHBOARD, WORKING SELECT DATE BUTTON
+///
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -19,9 +26,6 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
   String? _loggedUserName;
-
-  List<dynamic> auditResults = [];
-  DateTime selectedDate = DateTime.now();
 
   @override
   void initState() {
@@ -66,15 +70,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
+          const SnackBar(
+            content: Text(
               'Logged out successfully.',
               style: TextStyle(
                 color: Colors.black,
                 fontWeight: FontWeight.w400,
               ),
             ),
-            //backgroundColor: Theme.of(context).colorScheme.primary,
             backgroundColor: Colors.white,
             behavior: SnackBarBehavior.floating,
           ),
@@ -242,16 +245,13 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  Map<String, int> technicianDefectiveCounts = {}; // name -> defective count
-
   int checkedTodayCount = 0;
-  int technicianCount = 0; //Technicians totla
-  int totalToolsCount = 0; //Tools total
-  int toolsOnhandCount = 0; //Onhand total
-  int toolsDefectiveCount = 0; //Defective total
+  int technicianCount = 0;
+  int totalToolsCount = 0;
+  int toolsOnhandCount = 0;
+  int toolsDefectiveCount = 0;
+  int techniciansInspectedCount = 0;
   bool isLoading = true;
-
-  List<dynamic> auditResults = [];
   DateTime selectedDate = DateTime.now();
 
   @override
@@ -265,34 +265,47 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() => isLoading = true);
 
     try {
+      final today = DateTime.now();
+
+      // Build local day range
+      final startLocal = DateTime(today.year, today.month, today.day);
+      final endLocal = startLocal.add(const Duration(days: 1));
+
+      // Convert LOCAL → UTC for Supabase query
+      final startUTC = startLocal.toUtc();
+      final endUTC = endLocal.toUtc();
+
       final technicians = await supabase.from('technicians').select();
       final allTools = await supabase.from('tools').select();
+
       final technicianTools = await supabase
           .from('technician_tools')
-          .select('checked_at, status');
+          .select('checked_at, status, last_updated_at, technician_id')
+          .gte('last_updated_at', startUTC.toIso8601String())
+          .lt('last_updated_at', endUTC.toIso8601String());
 
       int onhandCount = 0;
       int defectiveCount = 0;
-      int checkedToday = 0;
-
-      final today = DateTime.now();
+      int checkedCountForDate = 0;
+      Set<String> inspectedTechnicianIds = {};
 
       for (final tool in technicianTools) {
         final checkedAt = tool['checked_at'] != null
-            ? DateTime.parse(tool['checked_at'])
+            ? DateTime.parse(tool['checked_at']).toLocal()
             : null;
 
-        if (tool['status'] == 'Onhand') {
-          onhandCount++;
-        } else if (tool['status'] == 'Defective') {
-          defectiveCount++;
-        }
+        if (tool['status'] == 'Onhand') onhandCount++;
+        if (tool['status'] == 'Defective') defectiveCount++;
 
         if (checkedAt != null &&
             checkedAt.year == today.year &&
             checkedAt.month == today.month &&
             checkedAt.day == today.day) {
-          checkedToday++;
+          checkedCountForDate++;
+        }
+
+        if (tool['technician_id'] != null) {
+          inspectedTechnicianIds.add(tool['technician_id'].toString());
         }
       }
 
@@ -303,7 +316,8 @@ class _DashboardPageState extends State<DashboardPage> {
         totalToolsCount = allTools.length;
         toolsOnhandCount = onhandCount;
         toolsDefectiveCount = defectiveCount;
-        checkedTodayCount = checkedToday;
+        checkedTodayCount = checkedCountForDate;
+        techniciansInspectedCount = inspectedTechnicianIds.length;
         isLoading = false;
       });
     } catch (e) {
@@ -317,119 +331,108 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  // Future<void> filteredDate(DateTime date) async {
-  //   final supabase = Supabase.instance.client;
-
-  //   final startDate = DateTime(date.year, date.month, date.day);
-  //   final endDate = startDate.add(const Duration(days: 1));
-
-  //   try {
-  //     final response = await supabase
-  //         .from('technician_tools')
-  //         .select()
-  //         .gte('last_updated_at', startDate.toIso8601String())
-  //         .lt('last_updated_at', endDate.toIso8601String());
-
-  //     int onhand = 0;
-  //     int defective = 0;
-
-  //     for (final log in response) {
-  //       if (log['status'] == 'Onhand') onhand++;
-  //       if (log['status'] == 'Defective') defective++;
-  //     }
-
-  //     setState(() {
-  //       auditResults = response;
-  //       toolsOnhandCount = onhand;
-  //       toolsDefectiveCount = defective;
-  //     });
-  //   } catch (e) {
-  //     debugPrint("❌ Error fetching audit data: $e");
-  //   }
-  // }
-
-  Future<void> filteredDate(DateTime date) async {
+  Future<void> filteredDate(DateTime pickedDate) async {
     final supabase = Supabase.instance.client;
 
-    // Step 1: Try to get the nearest previous audit date
-    final actualDate = await getNearestPreviousAuditDate(date);
+    // Find the nearest audit date equal or before pickedDate
+    final actualDate = await getNearestPreviousAuditDate(pickedDate);
 
     if (actualDate == null) {
-      debugPrint("⚠ No audit logs exist at all.");
+      // No audit found at all
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("No Data Found"),
+            content: Text(
+              "There are no audit logs on or before "
+              "${DateFormat('MMMM dd, yyyy').format(pickedDate)}.",
+            ),
+            actions: [
+              TextButton(
+                child: const Text("OK"),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
       return;
     }
 
-    // Use the actual audit date found
-    //selectedDate = actualDate;
+    // Convert UTC from database → LOCAL time
+    final localActualDate = actualDate.toLocal();
 
+    // Update selected date in UI to reflect the actual audit date
+    setState(() => selectedDate = localActualDate);
+
+    // Build local day range
     final startDate = DateTime(
-      actualDate.year,
-      actualDate.month,
-      actualDate.day,
+      localActualDate.year,
+      localActualDate.month,
+      localActualDate.day,
     );
     final endDate = startDate.add(const Duration(days: 1));
 
-    final response = await supabase
+    // Convert LOCAL → UTC for Supabase query
+    final utcStartDate = startDate.toUtc();
+    final utcEndDate = endDate.toUtc();
+
+    final logs = await supabase
         .from('technician_tools')
-        .select()
-        .gte('last_updated_at', startDate.toIso8601String())
-        .lt('last_updated_at', endDate.toIso8601String());
+        .select('status, technician_id, checked_at')
+        .gte('last_updated_at', utcStartDate.toIso8601String())
+        .lt('last_updated_at', utcEndDate.toIso8601String());
 
     int onhand = 0;
     int defective = 0;
+    int checked = 0;
+    Set<String> inspectedTechnicianIds = {};
 
-    for (final log in response) {
+    for (final log in logs) {
       if (log['status'] == 'Onhand') onhand++;
       if (log['status'] == 'Defective') defective++;
+
+      if (log['checked_at'] != null) {
+        final checkedAt = DateTime.parse(log['checked_at']).toLocal();
+        if (checkedAt.year == localActualDate.year &&
+            checkedAt.month == localActualDate.month &&
+            checkedAt.day == localActualDate.day) {
+          checked++;
+        }
+      }
+
+      if (log['technician_id'] != null) {
+        inspectedTechnicianIds.add(log['technician_id'].toString());
+      }
     }
 
+    if (!mounted) return;
+
     setState(() {
-      auditResults = response;
       toolsOnhandCount = onhand;
       toolsDefectiveCount = defective;
+      techniciansInspectedCount = inspectedTechnicianIds.length;
+      checkedTodayCount = checked; // now correct for selected date
     });
   }
 
-  // Future<void> _fetchDashboardByDate(DateTime date) async {
-  //   final supabase = Supabase.instance.client;
-  //   setState(() => isLoading = true);
-  //   try {
-  //     final dateString = DateFormat('yyyy-MM-dd').format(date);
-  //     final logs = await supabase
-  //         .from('tool_audit_logs')
-  //         .select()
-  //         .eq('audit_date', dateString);
-  //     int onhand = 0;
-  //     int defective = 0;
-  //     for (final log in logs) {
-  //       if (log['status'] == 'Onhand') onhand++;
-  //       if (log['status'] == 'Defective') defective++;
-  //     }
-  //     setState(() {
-  //       toolsOnhandCount = onhand;
-  //       toolsDefectiveCount = defective;
-  //       auditResults = logs;
-  //       isLoading = false;
-  //     });
-  //   } catch (e) {
-  //     debugPrint("Error fetching audit: $e");
-  //     setState(() => isLoading = false);
-  //   }
-  // }
-
-  Future<DateTime?> getNearestPreviousAuditDate(DateTime date) async {
+  Future<DateTime?> getNearestPreviousAuditDate(DateTime pickedDate) async {
     final supabase = Supabase.instance.client;
+
+    // Convert pickedDate (LOCAL) → UTC for query
+    final queryDateUTC = pickedDate.toUtc();
 
     final response = await supabase
         .from('technician_tools')
-        .select()
-        .lte('last_updated_at', date.toIso8601String())
+        .select('last_updated_at')
+        .lte('last_updated_at', queryDateUTC.toIso8601String())
         .order('last_updated_at', ascending: false)
         .limit(1);
 
     if (response.isEmpty) return null;
 
-    return DateTime.parse(response.first['last_updated_at']);
+    return DateTime.parse(response.first['last_updated_at']); // returns UTC
   }
 
   @override
@@ -437,7 +440,11 @@ class _DashboardPageState extends State<DashboardPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return RefreshIndicator(
-      onRefresh: _fetchDashboardData,
+      onRefresh: () async {
+        final today = DateTime.now();
+        setState(() => selectedDate = today);
+        await filteredDate(today);
+      },
       child: SafeArea(
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -455,8 +462,6 @@ class _DashboardPageState extends State<DashboardPage> {
                     children: [
                       buildDateHeader(isDark),
                       const SizedBox(height: 20),
-                      //buildDashboardCards(isDark),
-                      //const SizedBox(height: 40),
                       buildPieChart(isDark),
                       const SizedBox(height: 30),
                     ],
@@ -468,141 +473,59 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget buildDateHeader(bool isDark) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Date: ${DateFormat('MMMM dd, yyyy').format(selectedDate)}",
-          style: TextStyle(
-            fontFamily: 'Roboto',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: isDark ? Colors.white : Colors.black,
-          ),
-        ),
-        const SizedBox(width: 10),
-        ElevatedButton(
-          onPressed: () async {
-            final today = DateTime.now();
+        // Last audit date text
+        Row(
+          children: [
+            Text(
+              "Last audit date: ${DateFormat('MMMM dd, yyyy').format(selectedDate)}",
+              style: TextStyle(
+                fontFamily: 'Roboto',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+            const SizedBox(width: 5),
+            ElevatedButton(
+              // Button
+              onPressed: () async {
+                final today = DateTime.now();
 
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: selectedDate.isAfter(today) ? today : selectedDate,
-              firstDate: DateTime(2023),
-              lastDate: today, // prevent future dates
-            );
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: selectedDate.isAfter(today)
+                      ? today
+                      : selectedDate,
+                  firstDate: DateTime(2023),
+                  lastDate: today,
+                );
 
-            if (picked != null) {
-              setState(() => selectedDate = picked);
-              filteredDate(picked);
-            }
-          },
-          child: Text("Select Date"),
+                if (picked != null) {
+                  setState(() => selectedDate = picked);
+                  filteredDate(picked);
+                }
+              },
+              child: const Text("Select Date"),
+            ),
+          ],
         ),
+
+        const SizedBox(height: 10),
       ],
     );
   }
 
   Widget buildPieChart(bool isDark) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.45,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [Colors.grey.shade900, Colors.grey.shade800]
-              : [Colors.white, Colors.grey.shade50],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Expanded(
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 3,
-                centerSpaceRadius:
-                    MediaQuery.of(context).size.width * 0.15, // ⬅ responsive
-                startDegreeOffset: -90,
-                sections: [
-                  _buildPieSection(
-                    toolsOnhandCount.toDouble(),
-                    Colors.green,
-                    Icons.check_circle,
-                  ),
-                  _buildPieSection(
-                    toolsDefectiveCount.toDouble(),
-                    Colors.red,
-                    Icons.warning,
-                  ),
-                  _buildPieSection(
-                    technicianCount.toDouble(),
-                    Colors.orange,
-                    Icons.engineering,
-                  ),
-                  _buildPieSection(
-                    totalToolsCount.toDouble(),
-                    Colors.grey,
-                    Icons.build,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16), // ⬅ spacing between chart and legend
-
-          Wrap(
-            spacing: 10,
-            runSpacing: 5,
-            alignment: WrapAlignment.center,
-            children: [
-              _LegendItem('Overall Tools On-hand', Colors.green),
-              _LegendItem('Overall Defective Tools', Colors.red),
-              _LegendItem('Total Technicians', Colors.orange),
-              _LegendItem('Total Tools', Colors.grey),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  PieChartSectionData _buildPieSection(
-    double value,
-    Color color,
-    IconData icon,
-  ) {
-    return PieChartSectionData(
-      value: value,
-      title: '${value.toInt()}',
-      color: color,
-      radius: 65,
-      titleStyle: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.bold,
-        color: Colors.white,
-      ),
-      badgeWidget: _ChartBadge(icon: icon, color: color),
-      badgePositionPercentageOffset: 1.4,
-    );
-  }
-
-  Widget buildDashboardCards(bool isDark) {
     return GridView.count(
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
       crossAxisCount: 2,
       crossAxisSpacing: 16,
       mainAxisSpacing: 16,
+      childAspectRatio: 1.1,
       children: [
         _DashboardCard(
           title: 'Tools On-hand',
@@ -617,13 +540,19 @@ class _DashboardPageState extends State<DashboardPage> {
           color: Colors.red,
         ),
         _DashboardCard(
+          title: 'Technicians Inspected',
+          count: techniciansInspectedCount.toString(),
+          icon: Icons.fact_check,
+          color: Colors.blue,
+        ),
+        _DashboardCard(
           title: 'Total Technicians',
           count: technicianCount.toString(),
           icon: Icons.engineering,
           color: Colors.orange,
         ),
         _DashboardCard(
-          title: 'Total Tools',
+          title: 'Overall Tools Total',
           count: totalToolsCount.toString(),
           icon: Icons.build,
           color: Colors.grey,
@@ -679,79 +608,20 @@ class _DashboardCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.white70,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.white70,
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ChartBadge extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-
-  const _ChartBadge({required this.icon, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.3),
-            blurRadius: 8,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: Icon(icon, size: 20, color: color),
-    );
-  }
-}
-
-class _LegendItem extends StatelessWidget {
-  final String label;
-  final Color color;
-  //final int count;
-
-  const _LegendItem(
-    this.label,
-    this.color,
-    // this.count
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-      ],
     );
   }
 }
