@@ -378,8 +378,11 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                 final existing = await supabase
                     .from('technicians')
                     .select('id')
+                    //filter data, case insensitive
                     .ilike('name', newName)
+                    //.neq = not equal
                     .neq('id', technician['id'])
+                    //return single digit
                     .maybeSingle();
 
                 if (existing != null) {

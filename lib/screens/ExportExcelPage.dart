@@ -60,10 +60,31 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         ),
         tools:tools!technician_tools_tools_id_fkey(name, category),
         status,
-        last_updated_at
+        last_updated_at),
+          technician_remarks:technician_remarks!technician_remarks_technician_id_fkey(
+          remarks
+        ),
       ''');
 
-      // final rows = await fetchTodayRowsWithJoins();
+      // Build remarks map
+      final Map<String, String> technicianRemarks = {};
+
+      for (final row in rows) {
+        final tech = row['technicians'];
+        final remarksList = row['technician_remarks']; // this is always a List
+
+        if (tech != null) {
+          final name = tech['name'] ?? '';
+
+          if (!technicianRemarks.containsKey(name)) {
+            if (remarksList is List && remarksList.isNotEmpty) {
+              technicianRemarks[name] = remarksList.first['remarks'] ?? '';
+            } else {
+              technicianRemarks[name] = '';
+            }
+          }
+        }
+      }
 
       final techMap = <String, DateTime>{};
       final techSignatures = <String, String?>{};
@@ -74,13 +95,6 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         final createdAt = DateTime.parse(r['last_updated_at']); // <-- NEW
         final signature = r['technicians']['e_signature'];
         final picture = r['technicians']['pictures'];
-
-        // if (!techMap.containsKey(name) || createdAt.isAfter(techMap[name]!)) {
-        //   // Store latest only
-        //   techMap[name] = createdAt;
-        //   techSignatures[name] = signature;
-        //   techPictures[name] = picture;
-        // }
 
         if (isToday(createdAt)) {
           // Only include technicians whose last_updated_at is today
@@ -105,8 +119,8 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
       }
 
       final sortedCategories = categorizedTools.keys.toList()..sort();
-
       final table = <String, Map<String, String>>{};
+
       for (final category in sortedCategories) {
         for (final tool in categorizedTools[category]!.toList()..sort()) {
           table[tool] = {for (var tech in techNames) tech: "None"};
@@ -202,10 +216,6 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
         }
       }
 
-      // -----------------------------
-      // SIGNATURE ROW (existing code)
-      // -----------------------------
-
       // Signatures row
       final signatureRowIndex = sheet.maxRows;
       sheet.appendRow([
@@ -253,6 +263,122 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                 CellIndex.indexByColumnRow(
                   columnIndex: 0,
                   rowIndex: picturesRowIndex,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
+
+      // // Remarks row
+      // final remarksRowIndex = sheet.maxRows;
+      // sheet.appendRow([
+      //   TextCellValue("Remarks"),
+      //   ...techNames.map((name) {
+      //     final remarks = technicianRemarks[name];
+      //     if (remarks != null && remarks.trim().isNotEmpty) {
+      //       return TextCellValue(remarks);
+      //     } else {
+      //       return TextCellValue("No Remarks");
+      //     }
+      //   }),
+      // ]);
+      // Make "Pictures" bold
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: picturesRowIndex,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
+
+      int startRow = sheet.maxRows;
+      // ---------------------------------------------------------
+      // ADD BLANK SPACING
+      // ---------------------------------------------------------
+      sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: startRow),
+      );
+      sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: startRow + 1),
+      );
+      // ---------------------------------------------------------
+      // TECHNICIANS INSPECTED ROW
+      // ---------------------------------------------------------
+      final inspectedRowIndex = sheet.maxRows;
+
+      sheet.appendRow([
+        TextCellValue("Technicians Inspected"),
+        TextCellValue(techNames.length.toString()),
+      ]);
+
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: inspectedRowIndex,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
+      // ---------------------------------------------------------
+      // COUNT ONHAND & DEFECTIVE (based on the table actually written to sheet)
+      // ---------------------------------------------------------
+      int onhandCount = 0, defectiveCount = 0, missingCount = 0;
+
+      // table: Map<String, Map<String, String>> where keys are tool names
+      for (final toolEntry in table.entries) {
+        final statusesByTech = toolEntry.value;
+        for (final tech in techNames) {
+          final status = statusesByTech[tech] ?? "None";
+          if (status == "Onhand") onhandCount++;
+          if (status == "Defective") defectiveCount++;
+          if (status == "Missing") missingCount++;
+        }
+      }
+
+      // ONHAND ROW
+      sheet.appendRow([
+        TextCellValue("Onhand"),
+        TextCellValue(onhandCount.toString()),
+      ]);
+
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: sheet.maxRows - 1,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
+
+      // DEFECTIVE ROW
+      sheet.appendRow([
+        TextCellValue("Defective"),
+        TextCellValue(defectiveCount.toString()),
+      ]);
+
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: sheet.maxRows - 1,
+                ),
+              )
+              .cellStyle =
+          boldStyle;
+
+      sheet.appendRow([
+        TextCellValue("Missing"),
+        TextCellValue(missingCount.toString()),
+      ]);
+
+      sheet
+              .cell(
+                CellIndex.indexByColumnRow(
+                  columnIndex: 0,
+                  rowIndex: sheet.maxRows - 1,
                 ),
               )
               .cellStyle =
@@ -388,15 +514,10 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
-            // const SizedBox(height: 10),
-            // const Text(
-            //   'Choose your preferred format',
-            //   style: TextStyle(fontSize: 14, color: Colors.grey),
-            // ),
             const SizedBox(height: 20),
 
-            // Excel Export Card
             Card(
+              // Excel Export Card
               elevation: 4,
               margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
               child: InkWell(
