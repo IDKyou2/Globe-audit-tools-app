@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:excel/excel.dart';
 import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:intl/intl.dart';
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///
@@ -41,6 +42,9 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
   Future<void> exportExcel() async {
     // Request storage permission
     final status = await Permission.manageExternalStorage.request();
+
+    final now = DateTime.now();
+    final formattedDate = DateFormat('MMMM d, yyyy').format(now);
 
     if (!status.isGranted) {
       Fluttertoast.showToast(msg: "Storage permission denied");
@@ -163,6 +167,19 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
       final sheet = excel['Sheet1'];
 
       sheet.appendRow([
+        //TextCellValue("INSPECTION DATE"),
+        TextCellValue(formattedDate), // Todays Date
+      ]);
+
+      sheet
+              .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
+              .cellStyle =
+          boldStyle;
+
+      // EMPTY ROW (SPACING)
+      sheet.appendRow([TextCellValue('')]);
+
+      sheet.appendRow([
         TextCellValue("Tools"),
         ...techNames.map((t) => TextCellValue(t)),
       ]);
@@ -241,9 +258,6 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
               .cellStyle =
           boldStyle;
 
-      // Insert empty row spacing
-      sheet.appendRow([]);
-
       // Pictures row
       final picturesRowIndex = sheet.maxRows;
       sheet.appendRow([
@@ -292,16 +306,14 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
               .cellStyle =
           boldStyle;
 
-      int startRow = sheet.maxRows;
-      // ---------------------------------------------------------
-      // ADD BLANK SPACING
-      // ---------------------------------------------------------
-      sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: startRow),
-      );
-      sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: startRow + 1),
-      );
+
+      // EMPTY ROW (SPACING)
+      sheet.appendRow([TextCellValue('')]);
+
+      // EMPTY ROW (SPACING)
+      sheet.appendRow([TextCellValue('')]);
+
+
       // ---------------------------------------------------------
       // TECHNICIANS INSPECTED ROW
       // ---------------------------------------------------------

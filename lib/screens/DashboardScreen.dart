@@ -537,13 +537,13 @@ class _DashboardPageState extends State<DashboardPage> {
       childAspectRatio: 1.1,
       children: [
         _DashboardCard(
-          title: 'Tools On-hand',
+          title: 'Overall Tools On-hand',
           count: toolsOnhandCount.toString(),
           icon: Icons.check_circle,
           color: Colors.green,
         ),
         _DashboardCard(
-          title: 'Defective Tools',
+          title: 'Overall Defective Tools ',
           count: toolsDefectiveCount.toString(),
           icon: Icons.warning,
           color: Colors.red,
@@ -561,7 +561,7 @@ class _DashboardPageState extends State<DashboardPage> {
           color: Colors.orange,
         ),
         _DashboardCard(
-          title: 'Overall Tools Total',
+          title: 'Total Tools \n(Per technician)',
           count: totalToolsCount.toString(),
           icon: Icons.build,
           color: Colors.grey,
