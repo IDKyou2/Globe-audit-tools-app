@@ -178,6 +178,12 @@ class _ManageTechnicianToolsScreenState
 
       if (changedTools.isEmpty) {
         if (!mounted) return;
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   const SnackBar(
+        //     content: Text('No changes to save'),
+        //     duration: Duration(milliseconds: 800),
+        //   ),
+        // );
         setState(() => _saving = false);
         return;
       }
@@ -1246,18 +1252,12 @@ class _ManageTechnicianToolsScreenState
   Widget _showSignature() {
     final signatureUrl = widget.technician?['e_signature'];
 
-    // Don't show the card if URL is null or empty
-    if (signatureUrl == null || signatureUrl.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Card header
           Container(
             padding: const EdgeInsets.all(16),
             color: const Color(0xFF003E70),
@@ -1265,25 +1265,30 @@ class _ManageTechnicianToolsScreenState
               children: [
                 const Icon(Icons.edit, color: Colors.white, size: 24),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Text(
+                    //'E-signature $technicianName',
                     'E-signature',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
                 ),
+                if (signatureUrl != null)
+                  IconButton(
+                    //Refresh icon
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    onPressed: _openSignaturePad,
+                    tooltip: 'Add Signature',
+                  ),
                 IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.white),
-                  onPressed: _openSignaturePad,
-                  tooltip: 'Add Signature',
-                ),
-                IconButton(
+                  //Close icon
                   icon: const Icon(Icons.close, color: Colors.white, size: 20),
                   onPressed: () {
                     setState(() {
+                      // hide card by clearing the signature
                       widget.technician?['e_signature'] = null;
                     });
                   },
@@ -1292,50 +1297,77 @@ class _ManageTechnicianToolsScreenState
               ],
             ),
           ),
-
-          // Signature image
           Padding(
             padding: const EdgeInsets.all(16),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                signatureUrl,
-                height: 150,
-                width: double.infinity,
-                fit: BoxFit.contain,
-                // Log error and hide card if image fails
-                errorBuilder: (context, error, stackTrace) {
-                  print("Error loading signature image: $error");
-                  // Remove the signature so card disappears on next build
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      setState(() {
-                        widget.technician?['e_signature'] = null;
-                      });
-                    }
-                  });
-                  return const SizedBox.shrink();
-                },
+            child: signatureUrl != null
+                ? Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          signatureUrl,
+                          height: 150,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              height: 150,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 150,
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Text('Failed to load signature'),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  )
+                : Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'No signature yet',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ),
+          ),
+          if (signatureUrl == null)
+            Padding(
+              padding: const EdgeInsets.only(right: 16, bottom: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _openSignaturePad,
+                    icon: const Icon(Icons.draw),
+                    label: const Text('Add Signature'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF003E70),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
         ],
       ),
     );
-  }
-
-  /// Optional helper to pre-check if the image URL exists
-  Future<bool> _checkImageExists(String url) async {
-    try {
-      final response = await Uri.parse(
-        url,
-      ).resolve('').toFilePath(); // Just test URL format
-      // Or implement an actual HEAD request if needed
-      return true;
-    } catch (e) {
-      print("Invalid image URL: $e");
-      return false;
-    }
   }
 
   @override
@@ -1400,7 +1432,6 @@ class _ManageTechnicianToolsScreenState
               const SizedBox(height: 16),
               FloatingActionButton.extended(
                 heroTag: 'save',
-                // Save changes button, pag mag change ang technician sa tools status
                 onPressed: _saving ? null : _saveChanges,
                 icon: _saving
                     ? const SizedBox(

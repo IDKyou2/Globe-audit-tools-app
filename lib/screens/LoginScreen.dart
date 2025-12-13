@@ -50,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUsername = prefs.getString('username');
@@ -174,6 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        print(e);
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -182,7 +182,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       body: Container(
         width: double.infinity,

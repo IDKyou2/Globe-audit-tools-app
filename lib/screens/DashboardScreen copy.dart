@@ -267,44 +267,45 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final today = DateTime.now();
 
+      // Build local day range
       final startLocal = DateTime(today.year, today.month, today.day);
       final endLocal = startLocal.add(const Duration(days: 1));
 
+      // Convert LOCAL → UTC for Supabase query
       final startUTC = startLocal.toUtc();
       final endUTC = endLocal.toUtc();
 
       final technicians = await supabase.from('technicians').select();
       final allTools = await supabase.from('tools').select();
 
-      final logs = await supabase
+      final technicianTools = await supabase
           .from('technician_tools')
-          .select('status, technician_id, checked_at')
-          .gte('checked_at', startUTC.toIso8601String())
-          .lt('checked_at', endUTC.toIso8601String());
+          .select('checked_at, status, last_updated_at, technician_id')
+          .gte('last_updated_at', startUTC.toIso8601String())
+          .lt('last_updated_at', endUTC.toIso8601String());
 
-      int onhand = 0;
-      int defective = 0;
-      int checked = 0;
-      Set<String> inspectedTechs = {};
+      int onhandCount = 0;
+      int defectiveCount = 0;
+      int checkedCountForDate = 0;
+      Set<String> inspectedTechnicianIds = {};
 
-      for (final log in logs) {
-        final status = log['status'];
+      for (final tool in technicianTools) {
+        final checkedAt = tool['checked_at'] != null
+            ? DateTime.parse(tool['checked_at']).toLocal()
+            : null;
 
-        if (status == 'Onhand') onhand++;
-        if (status == 'Defective') defective++;
+        if (tool['status'] == 'Onhand') onhandCount++;
+        if (tool['status'] == 'Defective') defectiveCount++;
 
-        if (log['checked_at'] != null) {
-          final checkedAt = DateTime.parse(log['checked_at']).toLocal();
-
-          if (checkedAt.year == today.year &&
-              checkedAt.month == today.month &&
-              checkedAt.day == today.day) {
-            checked++;
-          }
+        if (checkedAt != null &&
+            checkedAt.year == today.year &&
+            checkedAt.month == today.month &&
+            checkedAt.day == today.day) {
+          checkedCountForDate++;
         }
 
-        if (log['technician_id'] != null) {
-          inspectedTechs.add(log['technician_id'].toString());
+        if (tool['technician_id'] != null) {
+          inspectedTechnicianIds.add(tool['technician_id'].toString());
         }
       }
 
@@ -313,14 +314,14 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         technicianCount = technicians.length;
         totalToolsCount = allTools.length;
-        toolsOnhandCount = onhand;
-        toolsDefectiveCount = defective;
-        checkedTodayCount = checked;
-        techniciansInspectedCount = inspectedTechs.length;
+        toolsOnhandCount = onhandCount;
+        toolsDefectiveCount = defectiveCount;
+        checkedTodayCount = checkedCountForDate;
+        techniciansInspectedCount = inspectedTechnicianIds.length;
         isLoading = false;
       });
     } catch (e) {
-      debugPrint('Error: $e');
+      debugPrint('Error fetching dashboard data: $e');
       if (mounted) {
         setState(() => isLoading = false);
         ScaffoldMessenger.of(
@@ -460,8 +461,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       buildDateHeader(isDark),
-                      const SizedBox(height: 10),
-                      buildBoxes(isDark),
+                      const SizedBox(height: 20),
+                      buildPieChart(isDark),
                       const SizedBox(height: 30),
                     ],
                   ),
@@ -487,47 +488,37 @@ class _DashboardPageState extends State<DashboardPage> {
                 color: isDark ? Colors.white : Colors.black,
               ),
             ),
+            const SizedBox(width: 5),
+            ElevatedButton(
+              // Button
+              onPressed: () async {
+                final today = DateTime.now();
+
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: selectedDate.isAfter(today)
+                      ? today
+                      : selectedDate,
+                  firstDate: DateTime(2023),
+                  lastDate: today,
+                );
+
+                if (picked != null) {
+                  setState(() => selectedDate = picked);
+                  filteredDate(picked);
+                }
+              },
+              child: const Text("Select Date"),
+            ),
           ],
         ),
 
-        const SizedBox(width: 5),
-
-        ElevatedButton(
-          onPressed: () async {
-            final today = DateTime.now();
-
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: selectedDate.isAfter(today) ? today : selectedDate,
-              firstDate: DateTime(2023),
-              lastDate: today,
-            );
-
-            if (picked != null) {
-              setState(() => selectedDate = picked);
-              filteredDate(picked);
-            }
-          },
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            minimumSize: const Size(85, 30),
-            textStyle: const TextStyle(fontSize: 13),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Text("Select Date"),
-              SizedBox(width: 4),
-              Icon(Icons.arrow_drop_down, size: 18),
-            ],
-          ),
-        ),
-        // const SizedBox(height: 10),
+        const SizedBox(height: 10),
       ],
     );
   }
 
-  Widget buildBoxes(bool isDark) {
+  Widget buildPieChart(bool isDark) {
     return GridView.count(
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
@@ -537,13 +528,13 @@ class _DashboardPageState extends State<DashboardPage> {
       childAspectRatio: 1.1,
       children: [
         _DashboardCard(
-          title: 'Overall Tools On-hand',
+          title: 'Tools On-hand',
           count: toolsOnhandCount.toString(),
           icon: Icons.check_circle,
           color: Colors.green,
         ),
         _DashboardCard(
-          title: 'Overall Defective Tools ',
+          title: 'Defective Tools',
           count: toolsDefectiveCount.toString(),
           icon: Icons.warning,
           color: Colors.red,
@@ -561,7 +552,7 @@ class _DashboardPageState extends State<DashboardPage> {
           color: Colors.orange,
         ),
         _DashboardCard(
-          title: 'Total Tools \n(Per technician)',
+          title: 'Overall Tools Total',
           count: totalToolsCount.toString(),
           icon: Icons.build,
           color: Colors.grey,

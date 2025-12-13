@@ -1,6 +1,7 @@
 // ignore_for_file: file_names
 
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -377,8 +378,11 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                 final existing = await supabase
                     .from('technicians')
                     .select('id')
+                    //filter data, case insensitive
                     .ilike('name', newName)
+                    //.neq = not equal
                     .neq('id', technician['id'])
+                    //return single digit
                     .maybeSingle();
 
                 if (existing != null) {
@@ -565,10 +569,13 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
                 await fetchTechnicians();
 
                 if (mounted) {
-                  _showSnack(
-                    'Technician deleted successfully',
-                    //color: Colors.black,
-                    textColor: Colors.red,
+                  // _showSnack(
+                  //   'Technician deleted successfully',
+                  //   //color: Colors.black,
+                  //   textColor: Colors.red,
+                  // );
+                  Fluttertoast.showToast(
+                    msg: "Technician deleted successfully",
                   );
                 }
               } catch (e) {
