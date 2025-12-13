@@ -716,12 +716,12 @@ class _ManageTechnicianToolsScreenState
   }
 
   Future<void> _saveRemarks() async {
-    if (_remarksController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please enter a remark")));
-      return;
-    }
+    // if (_remarksController.text.isEmpty) {
+    //   ScaffoldMessenger.of(
+    //     context,
+    //   ).showSnackBar(const SnackBar(content: Text("Please enter a remark")));
+    //   return;
+    // }
 
     setState(() => _loading = true);
 
@@ -889,8 +889,8 @@ class _ManageTechnicianToolsScreenState
                 style: TextStyle(fontSize: 12),
                 _expandedCategories.values.isNotEmpty &&
                         _expandedCategories.values.every((e) => e)
-                    ? 'Collapse All'
-                    : 'Expand All',
+                    ? 'Hide All'
+                    : 'Show All',
               ),
             ),
 
@@ -930,7 +930,7 @@ class _ManageTechnicianToolsScreenState
         const SizedBox(height: 10),
 
         //Text("Note:"),
-        if (_existingRemark != null && !_isEditingRemark) ...[
+        if ((_existingRemark ?? "").isNotEmpty && !_isEditingRemark) ...[
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
