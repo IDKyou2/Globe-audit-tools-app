@@ -223,13 +223,14 @@ class _ManageTechnicianToolsScreenState
       if (!mounted) return;
       setState(() => _hasChanges = false);
 
-      Fluttertoast.showToast(
-        msg: "Saved ${changedTools.length} changes",
-        toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: const Color.fromARGB(255, 24, 172, 29),
-        textColor: Colors.white,
-      );
+      // Fluttertoast.showToast(
+      //   msg: "Saved ${changedTools.length} changes",
+      //   toastLength: Toast.LENGTH_LONG,
+      //   gravity: ToastGravity.BOTTOM,
+      //   backgroundColor: const Color.fromARGB(255, 24, 172, 29),
+      //   textColor: Colors.white,
+      // );
+      Fluttertoast.showToast(msg: "Saved ${changedTools.length} changes");
     } catch (e) {
       debugPrint('❌ Error saving changes: $e');
 
@@ -837,7 +838,7 @@ class _ManageTechnicianToolsScreenState
                 onPressed: () => Navigator.of(context).pop(false),
                 child: Text(cancelText),
               ),
-              ElevatedButton(
+              TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
                 child: Text(confirmText),
               ),
@@ -933,21 +934,27 @@ class _ManageTechnicianToolsScreenState
         if ((_existingRemark ?? "").isNotEmpty && !_isEditingRemark) ...[
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(_existingRemark!, style: const TextStyle(fontSize: 14)),
-          ),
-          Align(
-            alignment: Alignment.center,
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() => _isEditingRemark = true);
-              },
-              // icon: const Icon(Icons.edit),
-              label: const Text("Edit"),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    _existingRemark!,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() => _isEditingRemark = true);
+                  },
+                  child: const Text("Edit"),
+                ),
+              ],
             ),
           ),
         ]
@@ -971,6 +978,7 @@ class _ManageTechnicianToolsScreenState
                   child: const Text('Save'),
                 ),
         ],
+        SizedBox(height: 150),
       ],
     );
   }
@@ -1354,31 +1362,54 @@ class _ManageTechnicianToolsScreenState
       },
       child: Scaffold(
         appBar: AppBar(title: Text("$technicianName's tools")),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _fetchTechnicianTools,
-                child: _buildToolsList(),
+        body: Stack(
+          children: [
+            _loading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _fetchTechnicianTools,
+                    child: _buildToolsList(),
+                  ),
+            // 🔼 Scroll-to-top button (LEFT SIDE)
+            if (_showScrollToTop)
+              Positioned(
+                left: 16,
+                bottom: _hasChanges ? 96 : 16, // avoid overlap with save FAB
+                child: FloatingActionButton(
+                  heroTag: 'scrollUpLeft',
+                  mini: true,
+                  onPressed: () {
+                    _scrollController.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOut,
+                    );
+                  },
+                  backgroundColor: Colors.grey.shade900,
+                  child: const Icon(Icons.arrow_upward, color: Colors.white),
+                ),
               ),
+          ],
+        ),
         floatingActionButton: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (_showScrollToTop) ...[
-              FloatingActionButton(
-                heroTag: 'scrollUp',
-                mini: true,
-                onPressed: () {
-                  _scrollController.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeOut,
-                  );
-                },
-                backgroundColor: Colors.grey.shade900,
-                child: const Icon(Icons.arrow_upward, color: Colors.white),
-              ),
-              const SizedBox(height: 5),
-            ],
+            // if (_showScrollToTop) ...[
+            //   FloatingActionButton(
+            //     heroTag: 'scrollUp',
+            //     mini: true,
+            //     onPressed: () {
+            //       _scrollController.animateTo(
+            //         0,
+            //         duration: const Duration(milliseconds: 400),
+            //         curve: Curves.easeOut,
+            //       );
+            //     },
+            //     backgroundColor: Colors.grey.shade900,
+            //     child: const Icon(Icons.arrow_upward, color: Colors.white),
+            //   ),
+            //   const SizedBox(height: 5),
+            // ],
 
             // Hide camera when _hasChanges = true
             if (!_hasChanges) ...[
