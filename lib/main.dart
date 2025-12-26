@@ -2,8 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:tools_audit_app/screens/ExportExcelPage.dart';
-import 'package:tools_audit_app/screens/SignupPage.dart';
+import 'package:tools_audit_app_v2/screens/ExportExcelPage.dart';
+import 'package:tools_audit_app_v2/screens/SignupPage.dart';
 import 'screens/LoginScreen.dart';
 import 'screens/DashboardScreen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -115,6 +115,7 @@ class _MyAppState extends State<MyApp> {
 
   // Add this getter
   bool get isDarkMode => _themeMode == ThemeMode.dark;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(

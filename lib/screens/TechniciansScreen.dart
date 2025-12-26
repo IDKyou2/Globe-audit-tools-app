@@ -278,61 +278,6 @@ class _TechniciansScreenState extends State<TechniciansScreen> {
     );
   }
 
-  // Separate function for adding technician
-  Future<void> _addTechnician(
-    BuildContext dialogContext,
-    String name,
-    String? cluster,
-    StateSetter setDialogState,
-    void Function(String?) setInlineError, // callback to update inlineError
-  ) async {
-    // Inline validation for empty fields
-    if (name.isEmpty || cluster == null) {
-      setInlineError('Please fill all required fields.');
-      return;
-    }
-
-    setState(() => isAdding = true);
-
-    try {
-      final supabase = Supabase.instance.client;
-
-      // Check for duplicates (case-insensitive)
-      final exists = await supabase
-          .from('technicians')
-          .select('id')
-          .ilike('name', name)
-          .maybeSingle();
-
-      if (exists != null) {
-        setInlineError('Technician "$name" already exists.');
-        return;
-      }
-
-      // Insert technician
-      final now = DateTime.now();
-      final formattedDate = DateFormat('MM/dd/yyyy, h:mm a').format(now);
-
-      await supabase.from('technicians').insert({
-        'name': name,
-        'cluster': cluster,
-        'created_at': formattedDate,
-      });
-
-      // Close the dialog
-      if (mounted) {
-        Navigator.pop(dialogContext);
-      }
-
-      // Refresh the list
-      await fetchTechnicians();
-    } catch (e) {
-      setInlineError('Error adding technician: $e');
-    } finally {
-      if (mounted) setState(() => isAdding = false);
-    }
-  }
-
   void editTechnician(Map<String, dynamic> technician) {
     final nameController = TextEditingController(text: technician['name']);
     String? selectedCluster = technician['cluster'];

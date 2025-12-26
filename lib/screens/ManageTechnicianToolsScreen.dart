@@ -1,5 +1,6 @@
 // ignore_for_file: file_names
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,7 +14,7 @@ import 'package:flutter/services.dart' show rootBundle, Uint8List;
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///
 ///
-///                                      WORKING COPY
+//                                      WORKING COPY
 ///
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -117,9 +118,14 @@ class _ManageTechnicianToolsScreenState
     final technicianId = widget.technicianId; // use string directly
 
     try {
-      final allTools = await _supabase
-          .from('tools')
-          .select('tools_id, name, category');
+      final allTools = await _supabase.from('tools').select('''
+          tools_id,
+          name,
+          category:categories!left (
+            id,
+            name
+          )
+        ''');
 
       final assignedTools = await _supabase
           .from('technician_tools')
@@ -135,7 +141,7 @@ class _ManageTechnicianToolsScreenState
         return {
           'tools_id': tool['tools_id'],
           'name': tool['name'],
-          'category': tool['category'],
+          'category': tool['category']?['name'] ?? 'Uncategorized',
           'status': match['status'] ?? 'None',
           'original_status': match['status'] ?? 'None',
         };
@@ -165,8 +171,11 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
-  Future<void> _saveChanges() async {
+  Future<void> saveChanges() async {
     final technicianId = widget.technicianId; // always string
+
+    final nowUtc = DateTime.now().toUtc();
+    final todayUtc = DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day);
 
     if (technicianId == null || _saving) return;
     setState(() => _saving = true);
@@ -188,32 +197,55 @@ class _ManageTechnicianToolsScreenState
           'technician_id': technicianId,
           'tools_id': tool['tools_id'],
           'status': tool['status'],
-          // 'last_updated_at': DateTime.now().toIso8601String(),
           'last_updated_at': DateTime.now()
               .toUtc()
               .toIso8601String(), // Explicit UTC
         };
       }).toList();
 
-      // await _supabase.from('technician_tools').upsert(updates);
       await _supabase
           .from('technician_tools')
           .upsert(updates, onConflict: 'technician_id,tools_id');
 
-      // ----------------------------------------- AUDIT_LOGS TABLE ----------------------------------------
-      // Insert into audit table with date
-      // final today = DateTime.now();
-      // final auditInserts = changedTools.map((tool) {
-      //   return {
-      //     'technician_id': technicianId, // from technician_tools
-      //     'tools_id': tool['tools_id'],
-      //     'status': tool['status'],
-      //     'date_added': DateTime.now().toIso8601String().substring(0, 10),
-      //   };
-      // }).toList();
+      // -------------------- dashboard_summary table INSERT / UPDATE --------------------
+      final dashboardData = await _supabase
+          .from('technician_tools')
+          .select('status, technician_id')
+          .gte('last_updated_at', todayUtc.toIso8601String())
+          .lt(
+            'last_updated_at',
+            todayUtc.add(const Duration(days: 1)).toIso8601String(),
+          );
 
-      // // await _supabase.from('audit_logs').insert(auditInserts);
-      // await _supabase.from('audit_logs').upsert(auditInserts);
+      // final totalTools = dashboardData.length;
+      final onhandCount = dashboardData
+          .where((e) => e['status'] == 'Onhand')
+          .length;
+      final defectiveCount = dashboardData
+          .where((e) => e['status'] == 'Defective')
+          .length;
+      final techniciansCount = dashboardData
+          .map((e) => e['technician_id'])
+          .toSet()
+          .length;
+
+      //------------------ Count all listed tools and insert to table --------------
+      // final res = await Supabase.instance.client
+      //     .from('tools')
+      //     .select('*')
+      //     .count(CountOption.estimated); // Use .count() as a separate method
+
+      // final count = res.count; // Access the count property, not length
+
+      await _supabase.from('dashboard_summary').upsert({
+        'summary_date': todayUtc.toIso8601String().substring(0, 10),
+        // 'total_tools': count,
+        'tools_onhand': onhandCount,
+        'tools_defective': defectiveCount,
+        'technicians_inspected': techniciansCount,
+        // 'checked_today': techniciansCount,
+        'updated_at': nowUtc.toIso8601String(),
+      }, onConflict: 'summary_date');
 
       // Update local tool states
       for (var tool in _tools) {
@@ -223,13 +255,7 @@ class _ManageTechnicianToolsScreenState
       if (!mounted) return;
       setState(() => _hasChanges = false);
 
-      Fluttertoast.showToast(
-        msg: "Saved ${changedTools.length} changes",
-        toastLength: Toast.LENGTH_LONG,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: const Color.fromARGB(255, 24, 172, 29),
-        textColor: Colors.white,
-      );
+      Fluttertoast.showToast(msg: "Saved ${changedTools.length} changes");
     } catch (e) {
       debugPrint('❌ Error saving changes: $e');
 
@@ -261,7 +287,7 @@ class _ManageTechnicianToolsScreenState
     switch (category) {
       case 'PPE':
         return Icons.security;
-      case 'GPON Tools':
+      case 'GPON':
         return Icons.settings_input_antenna;
       case 'Common Tools':
         return Icons.build;
@@ -468,81 +494,6 @@ class _ManageTechnicianToolsScreenState
                   child: const Text('Clear'),
                 ),
 
-                // Display button
-                // TextButton(
-                //   onPressed: isProcessing
-                //       ? null
-                //       : () async {
-                //           if (_signatureController.isEmpty) {
-                //             Fluttertoast.showToast(msg: "Please sign first");
-                //             return;
-                //           }
-
-                //           setDialogState(() => isProcessing = true);
-
-                //           try {
-                //             final technicianName =
-                //                 widget.technician?['name'] ?? "Technician";
-
-                //             // Get signature PNG
-                //             final sigBytes = await _signatureController
-                //                 .toPngBytes();
-                //             if (sigBytes == null) {
-                //               Fluttertoast.showToast(
-                //                 msg: "Failed to capture signature.",
-                //               );
-                //               setDialogState(() => isProcessing = false);
-                //               return;
-                //             }
-
-                //             // Create final image with signature + name
-                //             final combinedBytes = await addNameToSignature(
-                //               sigBytes,
-                //               technicianName,
-                //             );
-
-                //             // Show the image in a new dialog
-                //             showDialog(
-                //               context: context,
-                //               builder: (_) => AlertDialog(
-                //                 title: const Text("Preview Signature"),
-                //                 content: Image.memory(
-                //                   combinedBytes,
-                //                   width: double.maxFinite,
-                //                 ),
-                //                 actions: [
-                //                   TextButton(
-                //                     onPressed: () => Navigator.pop(context),
-                //                     child: const Text("Close"),
-                //                   ),
-                //                 ],
-                //               ),
-                //             );
-
-                //             setDialogState(() => isProcessing = false);
-                //           } catch (e) {
-                //             Fluttertoast.showToast(
-                //               msg: "Error: $e",
-                //               backgroundColor: Colors.red,
-                //             );
-                //             setDialogState(() => isProcessing = false);
-                //           }
-                //         },
-                //   // style: ElevatedButton.styleFrom(
-                //   //   backgroundColor: const Color(0xFF003E70),
-                //   //   foregroundColor: Colors.white,
-                //   // ),
-                //   child: isProcessing
-                //       ? const SizedBox(
-                //           width: 20,
-                //           height: 20,
-                //           child: CircularProgressIndicator(
-                //             strokeWidth: 2,
-                //             color: Colors.white,
-                //           ),
-                //         )
-                //       : const Text('Preview'),
-                // ),
                 ElevatedButton(
                   onPressed: isSaving
                       ? null
@@ -561,14 +512,6 @@ class _ManageTechnicianToolsScreenState
                             //Displays technician name
                             final technicianName =
                                 widget.technician?['name'] ?? "Technician";
-
-                            if (technicianId == null) {
-                              Fluttertoast.showToast(
-                                msg: "Technician ID missing!",
-                              );
-                              setDialogState(() => isSaving = false);
-                              return;
-                            }
 
                             // Get signature PNG
                             final sigBytes = await _signatureController
@@ -631,7 +574,11 @@ class _ManageTechnicianToolsScreenState
                               msg: "Error: $e",
                               backgroundColor: Colors.red,
                             );
+
                             setDialogState(() => isSaving = false);
+                            if (kDebugMode) {
+                              print("Error: $e");
+                            }
                           }
                         },
                   style: ElevatedButton.styleFrom(
@@ -699,7 +646,7 @@ class _ManageTechnicianToolsScreenState
                 Navigator.of(
                   context,
                 ).pop(false); // Stay, let user save manually
-                _saveChanges(); // trigger save
+                saveChanges(); // trigger save
               },
               child: const Text('Save'),
             ),
@@ -716,13 +663,6 @@ class _ManageTechnicianToolsScreenState
   }
 
   Future<void> _saveRemarks() async {
-    if (_remarksController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please enter a remark")));
-      return;
-    }
-
     setState(() => _loading = true);
 
     try {
@@ -748,7 +688,7 @@ class _ManageTechnicianToolsScreenState
 
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("Remark added.")));
+        ).showSnackBar(const SnackBar(content: Text("Remarks added.")));
       } else {
         // 3️⃣ Update existing remark
         await _supabase
@@ -764,7 +704,7 @@ class _ManageTechnicianToolsScreenState
 
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("Remark updated")));
+        ).showSnackBar(const SnackBar(content: Text("Remarks updated")));
       }
     } catch (e) {
       setState(() => _loading = false);
@@ -805,7 +745,6 @@ class _ManageTechnicianToolsScreenState
         for (var tool in _tools) {
           tool['status'] = 'None';
         }
-        _checkForChanges();
       });
 
       Fluttertoast.showToast(msg: "All tools reset to None");
@@ -837,7 +776,7 @@ class _ManageTechnicianToolsScreenState
                 onPressed: () => Navigator.of(context).pop(false),
                 child: Text(cancelText),
               ),
-              ElevatedButton(
+              TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
                 child: Text(confirmText),
               ),
@@ -849,8 +788,43 @@ class _ManageTechnicianToolsScreenState
 
   //Widgets Section
   Widget _buildToolsList() {
+    // if (_tools.isEmpty) {
+    //   return const Center(child: Text('No results found'));
+    // }
     if (_tools.isEmpty) {
-      return const Center(child: Text('No results found'));
+      return ListView(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.build_outlined, size: 64, color: Colors.grey),
+                  SizedBox(height: 12),
+                  Text(
+                    'No tools assigned yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'Tools will appear here once added.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return ListView(
@@ -889,8 +863,8 @@ class _ManageTechnicianToolsScreenState
                 style: TextStyle(fontSize: 12),
                 _expandedCategories.values.isNotEmpty &&
                         _expandedCategories.values.every((e) => e)
-                    ? 'Collapse All'
-                    : 'Expand All',
+                    ? 'Hide All'
+                    : 'Show All',
               ),
             ),
 
@@ -908,7 +882,8 @@ class _ManageTechnicianToolsScreenState
 
                 if (confirmed) {
                   _clearAllStatuses();
-                  await _saveChanges();
+                  await saveChanges();
+
                   // Fluttertoast.showToast(msg: "All statuses cleared");
                 }
               },
@@ -917,41 +892,48 @@ class _ManageTechnicianToolsScreenState
           ],
         ),
 
-        // 🔥 Dynamically display ALL categories from Supabase
+        // Dynamically display ALL categories from Supabase
         ..._categories.map((cat) => _buildCategoryTools(cat)).toList(),
 
         const SizedBox(height: 5),
 
         if (_imageFile != null) _buildCapturedPhoto(),
-        // Only show signature if it exists AND changes have been saved
-        if (widget.technician?['e_signature'] != null && !_hasChanges)
+
+        if (widget.technician?['e_signature'] != null && _hasChanges)
+          //Only show signature pad if it exists and when theres changes
           _showSignature(),
 
         const SizedBox(height: 10),
 
         //Text("Note:"),
-        if (_existingRemark != null && !_isEditingRemark) ...[
+        if ((_existingRemark ?? "").isNotEmpty && !_isEditingRemark) ...[
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               border: Border.all(color: Colors.grey),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(_existingRemark!, style: const TextStyle(fontSize: 14)),
-          ),
-          Align(
-            alignment: Alignment.center,
-            child: TextButton.icon(
-              onPressed: () {
-                setState(() => _isEditingRemark = true);
-              },
-              // icon: const Icon(Icons.edit),
-              label: const Text("Edit"),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    _existingRemark!,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() => _isEditingRemark = true);
+                  },
+                  child: const Text("Edit"),
+                ),
+              ],
             ),
           ),
         ]
-        /// 🔥 Editing Mode (TextFormField + Save)
+        /// Editing Mode (TextFormField + Save)
         else ...[
           TextFormField(
             controller: _remarksController,
@@ -968,9 +950,10 @@ class _ManageTechnicianToolsScreenState
               ? const CircularProgressIndicator()
               : ElevatedButton(
                   onPressed: _saveRemarks,
-                  child: const Text('Save'),
+                  child: const Text('Save Remarks'),
                 ),
         ],
+        SizedBox(height: 150),
       ],
     );
   }
@@ -988,9 +971,9 @@ class _ManageTechnicianToolsScreenState
             )
             .toList()
           ..sort((a, b) {
-            final idA = int.tryParse(a['tools_id'].toString()) ?? 0;
-            final idB = int.tryParse(b['tools_id'].toString()) ?? 0;
-            return idA.compareTo(idB);
+            final nameA = (a['name'] ?? '').toString().toLowerCase();
+            final nameB = (b['name'] ?? '').toString().toLowerCase();
+            return nameA.compareTo(nameB);
           });
 
     // If no tool belongs to this category, don't display the card
@@ -1116,11 +1099,31 @@ class _ManageTechnicianToolsScreenState
 
                 child: Row(
                   children: [
+                    // Display tool name
                     Expanded(
                       flex: 3,
-                      child: Text(
-                        tool['name'] ?? '',
-                        style: const TextStyle(fontSize: 14),
+                      child: InkWell(
+                        onTap: () =>
+                            showToolImage(tool['name'] ?? '', tool['tools_id']),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                tool['name'] ?? 'No image',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              // INFO ICON
+                              Icons.info_outline,
+                              size: 16,
+                              color: Color.fromARGB(255, 221, 200, 6),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
 
@@ -1338,6 +1341,103 @@ class _ManageTechnicianToolsScreenState
     }
   }
 
+  Future<void> showToolImage(String toolName, String toolId) async {
+    // Fetch tool image URL from database
+    try {
+      final toolImage = await _supabase
+          .from('tools')
+          .select('image_url, name')
+          .eq('tools_id', toolId)
+          .single();
+
+      final imagePath = toolImage['image_url'];
+
+      if (imagePath == null || imagePath.isEmpty) {
+        Fluttertoast.showToast(msg: "No image available for this tool");
+        return;
+      }
+
+      final imageUrl = Supabase.instance.client.storage
+          .from('technician_tools') // bucket storage name
+          .getPublicUrl(imagePath);
+
+      if (imageUrl == null || imageUrl.isEmpty) {
+        Fluttertoast.showToast(msg: "No image available for this tool");
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: const Color(0xFF003E70),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        toolName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              // Image
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator());
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 48,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 8),
+                          Text('Failed to load image'),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+      Fluttertoast.showToast(
+        msg: "Error loading tool image: $e",
+        backgroundColor: Colors.red,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     //main
@@ -1354,32 +1454,38 @@ class _ManageTechnicianToolsScreenState
       },
       child: Scaffold(
         appBar: AppBar(title: Text("$technicianName's tools")),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-                onRefresh: _fetchTechnicianTools,
-                child: _buildToolsList(),
+        body: Stack(
+          children: [
+            _loading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: _fetchTechnicianTools,
+                    child: _buildToolsList(),
+                  ),
+            // 🔼 Scroll-to-top button (LEFT SIDE)
+            if (_showScrollToTop)
+              Positioned(
+                left: 16,
+                bottom: _hasChanges ? 96 : 16, // avoid overlap with save FAB
+                child: FloatingActionButton(
+                  heroTag: 'scrollUpLeft',
+                  mini: true,
+                  onPressed: () {
+                    _scrollController.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOut,
+                    );
+                  },
+                  backgroundColor: Colors.grey.shade900,
+                  child: const Icon(Icons.arrow_upward, color: Colors.white),
+                ),
               ),
+          ],
+        ),
         floatingActionButton: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (_showScrollToTop) ...[
-              FloatingActionButton(
-                heroTag: 'scrollUp',
-                mini: true,
-                onPressed: () {
-                  _scrollController.animateTo(
-                    0,
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeOut,
-                  );
-                },
-                backgroundColor: Colors.grey.shade900,
-                child: const Icon(Icons.arrow_upward, color: Colors.white),
-              ),
-              const SizedBox(height: 5),
-            ],
-
             // Hide camera when _hasChanges = true
             if (!_hasChanges) ...[
               FloatingActionButton(
@@ -1401,7 +1507,7 @@ class _ManageTechnicianToolsScreenState
               FloatingActionButton.extended(
                 heroTag: 'save',
                 // Save changes button, pag mag change ang technician sa tools status
-                onPressed: _saving ? null : _saveChanges,
+                onPressed: _saving ? null : saveChanges,
                 icon: _saving
                     ? const SizedBox(
                         width: 20,
