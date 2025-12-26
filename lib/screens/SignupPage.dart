@@ -81,28 +81,15 @@ class SignupPage extends State<SignupScreen> {
 
       if (response != null && mounted) {
         if (mounted) setState(() => _loading = false);
-        _usernameController.clear();
-        _fullNameController.clear();
-        _passwordController.clear();
-
-        // Dili ma read diri
-        // await showDialog(
-        //   context: context,
-        //   builder: (_) => AlertDialog(
-        //     title: const Text('Account Created'),
-        //     content: const Text('Your account was created successfully!'),
-        //     actions: [
-        //       TextButton(
-        //         onPressed: () {
-        //           Navigator.pop(context); // Close dialog
-        //           context.go('/'); // Redirect to login
-        //         },
-        //         child: const Text('OK'),
-        //       ),
-        //     ],
-        //   ),
-        // );
+        // _usernameController.clear();
+        // _fullNameController.clear();
+        // _passwordController.clear();
       }
+      context.go('/'); // Redirect to login
+      Fluttertoast.showToast(
+        msg: "Account created successfully.\n Redirecting to login...",
+        fontSize: 11.0,
+      );
     } catch (e) {
       if (mounted) {
         await showDialog(
@@ -121,18 +108,10 @@ class SignupPage extends State<SignupScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
-      context.go('/'); // Redirect to login
-      Fluttertoast.showToast(
-        //Show success dialog
-        msg: "Account created successfully. Redirected to login",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.green,
-        textColor: Colors.white,
-      );
-      //   _usernameController.clear();
-      //   _fullNameController.clear();
-      //   _passwordController.clear();
+
+      // _usernameController.clear();
+      // _fullNameController.clear();
+      // _passwordController.clear();
     }
   }
 

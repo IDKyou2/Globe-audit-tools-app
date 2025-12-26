@@ -40,12 +40,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
   }
 
   Future<void> exportExcel() async {
-    // Request storage permission
     final status = await Permission.manageExternalStorage.request();
-
-    final now = DateTime.now();
-    final formattedDate = DateFormat('MMMM d, yyyy').format(now);
-
     if (!status.isGranted) {
       Fluttertoast.showToast(msg: "Storage permission denied");
       return;
@@ -55,165 +50,160 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
 
     try {
       final supabase = Supabase.instance.client;
+      final nowUtc = DateTime.now().toUtc();
 
-      // ------------------------------- FETCH MAIN DATA --------------------------
-      final rows = await supabase.from('technician_tools').select('''
-      status,
-      last_updated_at,
-      tools:tools!technician_tools_tools_id_fkey(
-        name,
-        category
-      ),
-      technicians:technicians!technician_tools_technician_id_fkey(
-        id,
-        name,
-        e_signature,
-        pictures
-      )
-    ''');
+      // UTC-safe start/end of today
+      final start = DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day);
+      final end = start.add(const Duration(days: 1));
+      final formattedDate = DateFormat('MMMM d, yyyy').format(nowUtc);
 
-      // ------------------------------- FETCH REMARKS ----------------------------
-      final remarkRows = await supabase.from('technician_remarks').select('''
-      technician_id,
-      remarks
-    ''');
+      // ---------------- FETCH TODAY'S STATUS ----------------
+      final todayRows = await supabase
+          .from('technician_tools')
+          .select('''
+          technician_id,
+          tools_id,
+          status,
+          last_updated_at,
+          technicians:technician_tools_technician_id_fkey(
+            id,
+            name,
+            e_signature,
+            pictures
+          ),
+          tools:technician_tools_tools_id_fkey(
+            name,
+            categories:tools_category_id_fkey(name)
+          )
+        ''')
+          .gte('last_updated_at', start.toIso8601String())
+          .lt('last_updated_at', end.toIso8601String());
 
-      final Map<String, String> technicianRemarks = {};
-      for (final row in remarkRows) {
-        final techId = row['technician_id']?.toString();
-        if (techId != null) {
-          technicianRemarks[techId] = row['remarks']?.toString() ?? '';
-        }
+      if (todayRows.isEmpty) {
+        Fluttertoast.showToast(msg: "No inspections found for today");
+        return;
       }
 
-      // ------------------------------- BUILD TECH DATA --------------------------
-      final techMap = <String, DateTime>{};
-      final techSignatures = <String, String?>{};
-      final techPictures = <String, String?>{};
+      // ---------------- FETCH ALL TOOLS ----------------
+      final allToolsRows = await supabase
+          .from('tools')
+          .select('name, categories:categories!inner(name)');
 
-      for (final r in rows) {
+      // ---------------- FETCH REMARKS ----------------
+      final remarkRows = await supabase
+          .from('technician_remarks')
+          .select('technician_id, remarks');
+
+      final Map<String, String> remarksByTechId = {
+        for (final r in remarkRows)
+          r['technician_id'].toString(): r['remarks'] ?? '',
+      };
+
+      // ---------------- TECHNICIAN METADATA ----------------
+      final Map<String, DateTime> techLatest = {};
+      final Map<String, String?> techSignatures = {};
+      final Map<String, String?> techPictures = {};
+      final Map<String, String> techRemarks = {};
+
+      for (final r in todayRows) {
         final tech = r['technicians'];
         if (tech == null) continue;
 
-        final techId = tech['id']?.toString();
-        final name = tech['name'] ?? '';
-        if (name.isEmpty || techId == null) continue;
+        final techId = tech['id'].toString();
+        final name = tech['name'];
+        final updatedAt = DateTime.parse(r['last_updated_at']);
 
-        final createdAt = DateTime.parse(r['last_updated_at']);
-        final signature = tech['e_signature'];
-        final picture = tech['pictures'];
-
-        if (isToday(createdAt)) {
-          if (!techMap.containsKey(name) || createdAt.isAfter(techMap[name]!)) {
-            techMap[name] = createdAt;
-            techSignatures[name] = signature;
-            techPictures[name] = picture;
-          }
-        }
-
-        // Add remarks from the separate map
-        if (!technicianRemarks.containsKey(name)) {
-          technicianRemarks[name] = technicianRemarks[techId] ?? '';
+        if (!techLatest.containsKey(name) ||
+            updatedAt.isAfter(techLatest[name]!)) {
+          techLatest[name] = updatedAt;
+          techSignatures[name] = tech['e_signature'];
+          techPictures[name] = tech['pictures'];
+          techRemarks[name] = remarksByTechId[techId] ?? '';
         }
       }
 
-      final techNames = techMap.keys.toList()..sort();
+      final techNames = techLatest.keys.toList()..sort();
 
-      // ------------------------------- CATEGORIZED TOOLS ------------------------
-      final categorizedTools = <String, Set<String>>{};
-      for (final r in rows) {
-        final tool = r['tools']['name'];
-        final category = r['tools']['category'] ?? "Uncategorized";
-
+      // ---------------- CATEGORIZE TOOLS ----------------
+      final Map<String, Set<String>> categorizedTools = {};
+      for (final t in allToolsRows) {
+        final toolName = t['name'];
+        final category = t['categories']?['name'] ?? 'Uncategorized';
         categorizedTools.putIfAbsent(category, () => <String>{});
-        categorizedTools[category]!.add(tool);
+        categorizedTools[category]!.add(toolName);
       }
 
-      final sortedCategories = categorizedTools.keys.toList()..sort();
-      final table = <String, Map<String, String>>{};
-      for (final category in sortedCategories) {
-        for (final tool in categorizedTools[category]!.toList()..sort()) {
-          table[tool] = {for (var tech in techNames) tech: "None"};
+      // ---------------- BUILD TOOL STATUS TABLE ----------------
+      final Map<String, Map<String, String>> table = {};
+      for (final tools in categorizedTools.values) {
+        for (final tool in tools) {
+          table[tool] = {for (final tech in techNames) tech: 'None'};
         }
       }
-
-      for (final r in rows) {
-        final techName = r['technicians']?['name'];
-        final toolName = r['tools']?['name'];
-        final status = r['status'] ?? "None";
-
-        if (techName != null && toolName != null) {
-          table[toolName]![techName] = status;
-        }
+      // Overwrite with today’s actual statuses
+      for (final r in todayRows) {
+        final tech = r['technicians']?['name'];
+        final tool = r['tools']?['name'];
+        final status = r['status'] ?? 'None';
+        if (tech != null && tool != null) table[tool]![tech] = status;
       }
 
-      // ------------------------------- CREATE EXCEL -----------------------------
+      // ---------------- CREATE EXCEL ----------------
       final excel = Excel.createExcel();
-      final boldStyle = CellStyle(
+      final sheet = excel['Sheet1'];
+
+      final bold = CellStyle(bold: true);
+      final onhandStyle = CellStyle(
         bold: true,
-        fontFamily: getFontFamily(FontFamily.Arial),
+        fontColorHex: ExcelColor.green900,
       );
       final defectiveStyle = CellStyle(
         bold: true,
         fontColorHex: ExcelColor.red,
-        fontFamily: getFontFamily(FontFamily.Arial),
       );
       final missingStyle = CellStyle(
         bold: true,
         fontColorHex: ExcelColor.orange,
-        fontFamily: getFontFamily(FontFamily.Arial),
-      );
-      final onhandStyle = CellStyle(
-        bold: true,
-        fontColorHex: ExcelColor.green900,
-        fontFamily: getFontFamily(FontFamily.Arial),
       );
 
-      final sheet = excel['Sheet1'];
-
-      // Inspection Date
+      // Date header
       sheet.appendRow([TextCellValue(formattedDate)]);
       sheet
               .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
               .cellStyle =
-          boldStyle;
-      sheet.appendRow([TextCellValue('')]); // spacing
+          bold;
+      sheet.appendRow([TextCellValue('')]);
 
-      // Tools header row
-      sheet.appendRow([
-        TextCellValue("Tools"),
-        ...techNames.map((t) => TextCellValue(t)),
-      ]);
-      for (var col = 0; col <= techNames.length; col++) {
+      // Technician header
+      sheet.appendRow([TextCellValue(''), ...techNames.map(TextCellValue.new)]);
+      for (int i = 0; i <= techNames.length; i++) {
         sheet
-                .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 1))
+                .cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 1))
                 .cellStyle =
-            boldStyle;
+            bold;
       }
 
-      // Tools data rows
-      for (final category in sortedCategories) {
-        final headerRow = sheet.maxRows;
+      // Tool rows
+      for (final category in categorizedTools.keys.toList()..sort()) {
         sheet.appendRow([TextCellValue(category)]);
         sheet
                 .cell(
                   CellIndex.indexByColumnRow(
                     columnIndex: 0,
-                    rowIndex: headerRow,
+                    rowIndex: sheet.maxRows - 1,
                   ),
                 )
                 .cellStyle =
-            boldStyle;
+            bold;
 
-        final sortedTools = categorizedTools[category]!.toList()..sort();
-        for (final tool in sortedTools) {
+        for (final tool in categorizedTools[category]!.toList()..sort()) {
           final rowIndex = sheet.maxRows;
           sheet.appendRow([
             TextCellValue(tool),
-            ...techNames.map((tech) => TextCellValue(table[tool]![tech]!)),
+            ...techNames.map((t) => TextCellValue(table[tool]![t]!)),
           ]);
 
-          for (var col = 1; col <= techNames.length; col++) {
+          for (int col = 1; col <= techNames.length; col++) {
             final value = sheet
                 .cell(
                   CellIndex.indexByColumnRow(
@@ -223,27 +213,7 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                 )
                 .value
                 .toString();
-            if (value == "Defective")
-              sheet
-                      .cell(
-                        CellIndex.indexByColumnRow(
-                          columnIndex: col,
-                          rowIndex: rowIndex,
-                        ),
-                      )
-                      .cellStyle =
-                  defectiveStyle;
-            if (value == "Missing")
-              sheet
-                      .cell(
-                        CellIndex.indexByColumnRow(
-                          columnIndex: col,
-                          rowIndex: rowIndex,
-                        ),
-                      )
-                      .cellStyle =
-                  missingStyle;
-            if (value == "Onhand")
+            if (value == 'Onhand') {
               sheet
                       .cell(
                         CellIndex.indexByColumnRow(
@@ -253,173 +223,125 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
                       )
                       .cellStyle =
                   onhandStyle;
+            } else if (value == 'Defective') {
+              sheet
+                      .cell(
+                        CellIndex.indexByColumnRow(
+                          columnIndex: col,
+                          rowIndex: rowIndex,
+                        ),
+                      )
+                      .cellStyle =
+                  defectiveStyle;
+            } else if (value == 'Missing') {
+              sheet
+                      .cell(
+                        CellIndex.indexByColumnRow(
+                          columnIndex: col,
+                          rowIndex: rowIndex,
+                        ),
+                      )
+                      .cellStyle =
+                  missingStyle;
+            }
           }
         }
       }
 
-      // Remarks row
-      final remarksRowIndex = sheet.maxRows;
-      sheet.appendRow([
-        TextCellValue("Remarks"),
-        ...techNames.map((name) {
-          final remarks = technicianRemarks[name];
-          return (remarks != null && remarks.trim().isNotEmpty)
-              ? TextCellValue(remarks)
-              : TextCellValue("No Remarks");
-        }),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: remarksRowIndex,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
+      // ---------------- REMARKS / SIGNATURES / PICTURES ----------------
+      void appendMetaRow(String title, Map<String, String?> source) {
+        sheet.appendRow([
+          TextCellValue(title),
+          ...techNames.map(
+            (t) => TextCellValue(
+              source[t]?.isNotEmpty == true ? source[t]! : 'N/A',
+            ),
+          ),
+        ]);
+        sheet
+                .cell(
+                  CellIndex.indexByColumnRow(
+                    columnIndex: 0,
+                    rowIndex: sheet.maxRows - 1,
+                  ),
+                )
+                .cellStyle =
+            bold;
+      }
 
-      // Signatures row
-      final signatureRowIndex = sheet.maxRows;
-      sheet.appendRow([
-        TextCellValue("Signatures"),
-        ...techNames.map((name) {
-          final signatureUrl = techSignatures[name];
-          return (signatureUrl != null && signatureUrl.isNotEmpty)
-              ? TextCellValue(signatureUrl)
-              : TextCellValue("No signature");
-        }),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: signatureRowIndex,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
+      appendMetaRow('Remarks', techRemarks);
+      appendMetaRow('Signatures', techSignatures);
+      appendMetaRow('Pictures', techPictures);
 
-      // Pictures row
-      final picturesRowIndex = sheet.maxRows;
-      sheet.appendRow([
-        TextCellValue("Pictures"),
-        ...techNames.map((name) {
-          final pictureUrl = techPictures[name];
-          return (pictureUrl != null && pictureUrl.isNotEmpty)
-              ? TextCellValue(pictureUrl)
-              : TextCellValue("No picture");
-        }),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: picturesRowIndex,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
-
-      // EMPTY ROWS
-      sheet.appendRow([TextCellValue('')]);
-      sheet.appendRow([TextCellValue('')]);
-
-      // Technicians inspected row
-      final inspectedRowIndex = sheet.maxRows;
-      sheet.appendRow([
-        TextCellValue("Technicians Inspected"),
-        TextCellValue(techNames.length.toString()),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: inspectedRowIndex,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
-
-      // Count onhand/defective/missing
-      int onhandCount = 0, defectiveCount = 0, missingCount = 0;
-      for (final toolEntry in table.entries) {
-        for (final tech in techNames) {
-          final status = toolEntry.value[tech] ?? "None";
-          if (status == "Onhand") onhandCount++;
-          if (status == "Defective") defectiveCount++;
-          if (status == "Missing") missingCount++;
+      // ---------------- COUNTS ----------------
+      int onhand = 0, defective = 0, missing = 0;
+      for (final row in table.values) {
+        for (final status in row.values) {
+          if (status == 'Onhand') onhand++;
+          if (status == 'Defective') defective++;
+          if (status == 'Missing') missing++;
         }
       }
 
-      sheet.appendRow([
-        TextCellValue("Onhand"),
-        TextCellValue(onhandCount.toString()),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: sheet.maxRows - 1,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
+      sheet.appendRow([TextCellValue('')]); //Blank row
+      sheet.appendRow([TextCellValue('')]); //Blank row
 
-      sheet.appendRow([
-        TextCellValue("Defective"),
-        TextCellValue(defectiveCount.toString()),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: sheet.maxRows - 1,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
+      // Add counts
+      void appendCountRow(String title, int value, CellStyle style) {
+        final rowIndex = sheet.maxRows;
 
-      sheet.appendRow([
-        TextCellValue("Missing"),
-        TextCellValue(missingCount.toString()),
-      ]);
-      sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: 0,
-                  rowIndex: sheet.maxRows - 1,
-                ),
-              )
-              .cellStyle =
-          boldStyle;
+        sheet.appendRow([
+          TextCellValue(title),
+          TextCellValue(value.toString()),
+        ]);
 
-      // Save Excel
-      final dir = Directory("/storage/emulated/0/Download");
-      final fileName = "Tools-Audit-${now.month}-${now.day}-${now.year}.xlsx";
-      final file = File("${dir.path}/$fileName");
+        sheet
+                .cell(
+                  CellIndex.indexByColumnRow(
+                    columnIndex: 0,
+                    rowIndex: rowIndex,
+                  ),
+                )
+                .cellStyle =
+            style;
+        sheet
+                .cell(
+                  CellIndex.indexByColumnRow(
+                    columnIndex: 1,
+                    rowIndex: rowIndex,
+                  ),
+                )
+                .cellStyle =
+            style;
+      }
+
+      appendCountRow('Onhand', onhand, bold);
+      appendCountRow('Defective', defective, bold);
+      appendCountRow('Missing', missing, bold);
+      appendCountRow('Technicians Inspected', techNames.length, bold);
+
+      // ---------------- SAVE FILE ----------------
+      final dir = Directory('/storage/emulated/0/Download');
+      final fileName =
+          'Tools-Audit-${nowUtc.month}-${nowUtc.day}-${nowUtc.year}.xlsx';
+      final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(excel.encode()!);
 
-      setState(() {
-        _lastExportedFilePath = file.path;
-        _lastExportType = 'Excel';
-      });
+      setState(() => _lastExportedFilePath = file.path);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Excel exported successfully\n$fileName"),
-            backgroundColor: const Color(0xFF003E70),
-            duration: const Duration(seconds: 4),
+            content: Text('Excel exported successfully\n$fileName'),
             action: SnackBarAction(
               label: 'VIEW',
-              textColor: Colors.white,
               onPressed: () => _openFile(file.path),
             ),
           ),
         );
       }
     } catch (e) {
-      debugPrint("Export error: $e");
+      debugPrint('Export error: $e');
     } finally {
       setState(() => _exporting = false);
     }
@@ -440,8 +362,8 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
     final rows = await supabase
         .from('technician_tools')
         .select()
-        .gte('checked_at', startIso)
-        .lt('checked_at', endIso);
+        .gte('last_updated_at', startIso)
+        .lt('last_updated_at', endIso);
 
     return rows;
   }
@@ -584,7 +506,8 @@ class _ExportOptionsPageState extends State<ExportOptionsPage> {
               TextButton.icon(
                 onPressed: () => _openFile(_lastExportedFilePath!),
                 icon: const Icon(Icons.visibility),
-                label: Text('View Last Export ($_lastExportType)'),
+                label: Text('View Last Export'),
+                // label: Text('View Last Export ($_lastExportType)'),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF003E70),
                 ),

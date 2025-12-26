@@ -1,6 +1,5 @@
 // ignore_for_file: file_names
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -160,22 +159,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
           ),
-          ListTile(
-            leading: Icon(
-              isDark ? Icons.dark_mode : Icons.light_mode,
-              color: colorScheme.primary,
-            ),
-            title: Text(
-              'Dark Mode',
-              style: TextStyle(color: colorScheme.onSurface),
-            ),
-            trailing: Switch(
-              value: isDark,
-              onChanged: (value) => MyApp.of(context)?.toggleTheme(value),
-              activeColor: colorScheme.primary,
-            ),
-          ),
-          const Divider(),
+
+          // --------------------------------------- DARK MODE TOGGLE -----------------------------------
+          // ListTile(
+          //   leading: Icon(
+          //     isDark ? Icons.dark_mode : Icons.light_mode,
+          //     color: colorScheme.primary,
+          //   ),
+          //   title: Text(
+          //     'Dark Mode',
+          //     style: TextStyle(color: colorScheme.onSurface),
+          //   ),
+          //   trailing: Switch(
+          //     value: isDark,
+          //     onChanged: (value) => MyApp.of(context)?.toggleTheme(value),
+          //     activeColor: colorScheme.primary,
+          //   ),
+          // ),
+
+          //const Divider(),
           ListTile(
             leading: Icon(Icons.add, color: colorScheme.primary),
             title: Text(
@@ -278,9 +280,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
       final logs = await supabase
           .from('technician_tools')
-          .select('status, technician_id, checked_at')
-          .gte('checked_at', startUTC.toIso8601String())
-          .lt('checked_at', endUTC.toIso8601String());
+          .select('status, technician_id, last_updated_at')
+          .gte('last_updated_at', startUTC.toIso8601String())
+          .lt('last_updated_at', endUTC.toIso8601String());
 
       int onhand = 0;
       int defective = 0;
@@ -330,90 +332,80 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  Future<void> filteredDate(DateTime pickedDate) async {
+  Future<bool> filteredDate(DateTime pickedDate) async {
     final supabase = Supabase.instance.client;
 
-    // Find the nearest audit date equal or before pickedDate
-    final actualDate = await getNearestPreviousAuditDate(pickedDate);
-
-    if (actualDate == null) {
-      // No audit found at all
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text("No Data Found"),
-            content: Text(
-              "There are no audit logs on or before "
-              "${DateFormat('MMMM dd, yyyy').format(pickedDate)}.",
-            ),
-            actions: [
-              TextButton(
-                child: const Text("OK"),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
-    }
-
-    // Convert UTC from database → LOCAL time
-    final localActualDate = actualDate.toLocal();
-
-    // Update selected date in UI to reflect the actual audit date
-    setState(() => selectedDate = localActualDate);
-
-    // Build local day range
-    final startDate = DateTime(
-      localActualDate.year,
-      localActualDate.month,
-      localActualDate.day,
+    final utcDate = DateTime.utc(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
     );
-    final endDate = startDate.add(const Duration(days: 1));
 
-    // Convert LOCAL → UTC for Supabase query
-    final utcStartDate = startDate.toUtc();
-    final utcEndDate = endDate.toUtc();
+    final exact = await supabase
+        .from('dashboard_summary')
+        .select()
+        .eq('summary_date', utcDate.toIso8601String().substring(0, 10))
+        .maybeSingle();
 
-    final logs = await supabase
-        .from('technician_tools')
-        .select('status, technician_id, checked_at')
-        .gte('last_updated_at', utcStartDate.toIso8601String())
-        .lt('last_updated_at', utcEndDate.toIso8601String());
+    Map<String, dynamic>? row = exact;
 
-    int onhand = 0;
-    int defective = 0;
-    int checked = 0;
-    Set<String> inspectedTechnicianIds = {};
+    if (row == null) {
+      final previous = await supabase
+          .from('dashboard_summary')
+          .select()
+          .lte('summary_date', utcDate.toIso8601String().substring(0, 10))
+          .order('summary_date', ascending: false)
+          .limit(1);
 
-    for (final log in logs) {
-      if (log['status'] == 'Onhand') onhand++;
-      if (log['status'] == 'Defective') defective++;
+      if (previous.isEmpty) {
+        if (!mounted) return false;
 
-      if (log['checked_at'] != null) {
-        final checkedAt = DateTime.parse(log['checked_at']).toLocal();
-        if (checkedAt.year == localActualDate.year &&
-            checkedAt.month == localActualDate.month &&
-            checkedAt.day == localActualDate.day) {
-          checked++;
+        // Try to find nearest previous audit date
+        final nearestDate = await getNearestPreviousAuditDate(pickedDate);
+
+        if (nearestDate == null) {
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text("No Data Found"),
+              content: Text(
+                "There are no inspection records on or before "
+                "${DateFormat('MMMM dd, yyyy').format(pickedDate)}.",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK"),
+                ),
+              ],
+            ),
+          );
+          return false;
         }
-      }
 
-      if (log['technician_id'] != null) {
-        inspectedTechnicianIds.add(log['technician_id'].toString());
+        // Update to nearest previous audit date
+        setState(() {
+          selectedDate = nearestDate.toLocal();
+        });
+
+        return false;
       }
+      row = previous.first;
     }
 
-    if (!mounted) return;
+    final summaryDate = DateTime.parse(row['summary_date']).toLocal();
+
+    if (!mounted) return true;
 
     setState(() {
-      toolsOnhandCount = onhand;
-      toolsDefectiveCount = defective;
-      techniciansInspectedCount = inspectedTechnicianIds.length;
-      checkedTodayCount = checked; // now correct for selected date
+      selectedDate = summaryDate;
+      toolsOnhandCount = row!['tools_onhand'] ?? 0;
+      toolsDefectiveCount = row['tools_defective'] ?? 0;
+      techniciansInspectedCount = row['technicians_inspected'] ?? 0;
+      checkedTodayCount = row['checked_today'] ?? 0;
     });
+
+    return true;
   }
 
   Future<DateTime?> getNearestPreviousAuditDate(DateTime pickedDate) async {
@@ -434,41 +426,16 @@ class _DashboardPageState extends State<DashboardPage> {
     return DateTime.parse(response.first['last_updated_at']); // returns UTC
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  // Reusable function to fetch data based on selected date
+  Future<bool> fetchDataForDate(DateTime date) async {
+    final today = DateTime.now();
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        final today = DateTime.now();
-        setState(() => selectedDate = today);
-        await filteredDate(today);
-      },
-      child: SafeArea(
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: isLoading
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      buildDateHeader(isDark),
-                      const SizedBox(height: 10),
-                      buildBoxes(isDark),
-                      const SizedBox(height: 30),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    );
+    if (_isSameDate(date, today)) {
+      await _fetchDashboardData();
+      return true;
+    } else {
+      return await filteredDate(date);
+    }
   }
 
   Widget buildDateHeader(bool isDark) {
@@ -494,7 +461,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
         ElevatedButton(
           onPressed: () async {
+            //
             final today = DateTime.now();
+            final previousValidDate = selectedDate; // Store current date
 
             final picked = await showDatePicker(
               context: context,
@@ -505,7 +474,12 @@ class _DashboardPageState extends State<DashboardPage> {
 
             if (picked != null) {
               setState(() => selectedDate = picked);
-              filteredDate(picked);
+
+              final success = await fetchDataForDate(picked);
+
+              if (!success && selectedDate == picked) {
+                setState(() => selectedDate = previousValidDate);
+              }
             }
           },
           style: ElevatedButton.styleFrom(
@@ -569,9 +543,51 @@ class _DashboardPageState extends State<DashboardPage> {
       ],
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        final today = DateTime.now();
+        setState(() => selectedDate = today);
+        await fetchDataForDate(today);
+      },
+      child: SafeArea(
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: isLoading
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(40),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      buildDateHeader(isDark),
+                      const SizedBox(height: 10),
+                      buildBoxes(isDark),
+                      const SizedBox(height: 30),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-// ==================== Helper Widgets ====================
+// ==================== Helper Widgets ====================\
+// Helper function to check if two dates are the same day
+bool _isSameDate(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
 class _DashboardCard extends StatelessWidget {
   final String title;
   final String count;

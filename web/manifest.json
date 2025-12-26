@@ -1,6 +1,6 @@
 {
-    "name": "tools_audit_app",
-    "short_name": "tools_audit_app",
+    "name": "tools_audit_app_v2",
+    "short_name": "tools_audit_app_v2",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
